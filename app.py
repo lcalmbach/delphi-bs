@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 from sqlite3 import Error
 import pandas as pd
+import altair as alt
 from st_aggrid import AgGrid
 
 __version__ = '0.0.1' 
@@ -11,15 +12,12 @@ VERSION_DATE = '2021-06-12'
 my_name = 'delphi-bs'
 my_kuerzel = "dbs"
 GIT_REPO = 'https://github.com/lcalmbach/delphi-bs'
-conn = {}
-config = {} # dictionary mit allen Konfigurationseinträgen
 APP_INFO = f"""<div style="background-color:powderblue; padding: 10px;border-radius: 15px;">
     <small>App created by <a href="mailto:{__author_email__}">{__author__}</a><br>
     version: {__version__} ({VERSION_DATE})<br>
     <a href="{GIT_REPO}">git-repo</a>
     """
 
-conn = {}
 DB_FILE_PATH = "delphi-bs.sqlite3"
 conn = sqlite3.connect(DB_FILE_PATH)
 settings = {}
@@ -39,11 +37,13 @@ def execute_query(query: str, cn) -> pd.DataFrame:
 
     return result
 
+
 def get_tables(cat):
     sql = f"select id, table_name from stat_table where category_id = {cat} order by category_id, sort_key"
     df = execute_query(sql,conn)
     result = dict(zip( list(df['id']), list(df['table_name']) ))
     return result
+
 
 def get_categories():
     sql = f"select id, name from category order by name"
@@ -51,10 +51,12 @@ def get_categories():
     result = dict(zip( list(df['id']), list(df['name']) ))
     return result
 
+
 def get_table_name(table_id):
     sql = f"select table_name from stat_table where id = {table_id}"
     df = execute_query(sql,conn)
     return df.iloc[0]['table_name']
+
 
 def get_group_fields(column_id_list):
     csv_list = result = ','.join(map(str,column_id_list))
@@ -64,12 +66,15 @@ def get_group_fields(column_id_list):
     result = ','.join(df['name'])
     return result
 
+
 def get_data(group_field_ids, sum_field, table_id):
     table_name = get_table_name(table_id)
     group_fields = get_group_fields(group_field_ids)
-    sql = f"select {group_fields}, sum({sum_field}) as anzahl from {table_name} group by {group_fields} order by {group_fields}"
+    sql = f"select {group_fields}, {sum_field} from {table_name} group by {group_fields} order by {group_fields}"
+    st.write(sql)
     df = execute_query(sql,conn)
     return df
+
 
 def get_fields(table_id):
     sql = f"select id, name from stat_table_column where stat_table_id = {table_id} and col_type_id <> 3 order by sort_key"
@@ -81,7 +86,9 @@ def get_fields(table_id):
 def get_sum_fields(table_id):
     sql = f"select name from stat_table_column where stat_table_id = {table_id} and col_type_id = 3 order by sort_key"
     df = execute_query(sql,conn)
-    result = ",".join(df['name'])
+    df['name'] = df['name'] 
+    lst = [f"sum({x}) as {x}" for x in list(df['name'])]
+    result = ",".join(lst)
     return result
 
 
@@ -96,19 +103,31 @@ def show_filter():
     settings['group_columns'] = st.multiselect("Felder", list(fields.keys()),
                                         format_func=lambda x: fields[x],
                                         default=fields.keys()) 
-    sumfields =  get_sum_fields(settings['table'])  
+    settings['sumfields'] =  get_sum_fields(settings['table'])  
     
-    df = get_data(settings['group_columns'],  sumfields, settings['table'])  
-    return df
 
-   
+def get_plot_options():
+    sql = f"select chart, chart_options from stat_table where id = {settings['table']}"
+    st.write(sql)
+    df = execute_query(sql,conn)
+    return df.iloc[0]['chart'],df.iloc[0]['chart_options']
+
+def get_chart(df, plot_type, plot_options):
+    st.write(df.head())
+    if plot_type ==  'bar':
+        chart = alt.Chart(df).mark_bar().encode(
+            x='jahr:N',
+            y='anzahl:Q'
+        )
+    return chart
+
 def main():
     st.set_page_config(
         page_title=my_name,
         page_icon="ℹ",
         layout="wide",
     )
-    df = show_filter()
+    show_filter()
     
     st.markdown(
     '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" integrity="sha384-TX8t27EcRE3e/ihU7zmQxVncDAy5uIKz4rEkgIXeMed4M0jlfIDPvg6uqKI2xXr2" crossorigin="anonymous">',
@@ -143,7 +162,16 @@ def main():
     st.markdown("<br>", unsafe_allow_html=True)
 
     if active_tab == "Tabelle":
-        AgGrid((df))
+        df = get_data(settings['group_columns'],  settings['sumfields'], settings['table'])  
+        if len(df)>0:
+            AgGrid((df))
+        else:
+            st.markdown('keine Daten gefunden')
+    elif  active_tab == "Grafik":
+        df = get_data(settings['group_columns'],  settings['sumfields'], settings['table'])  
+        plot_type, plot_options = get_plot_options()
+        chart = get_chart(df, plot_type, plot_options)
+        st.altair_chart(chart)
         
 
 if __name__ == "__main__":
