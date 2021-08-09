@@ -71,7 +71,6 @@ def get_data(group_field_ids, sum_field, table_id):
     table_name = get_table_name(table_id)
     group_fields = get_group_fields(group_field_ids)
     sql = f"select {group_fields}, {sum_field} from {table_name} group by {group_fields} order by {group_fields}"
-    st.write(sql)
     df = execute_query(sql,conn)
     return df
 
@@ -108,18 +107,18 @@ def show_filter():
 
 def get_plot_options():
     sql = f"select chart, chart_options from stat_table where id = {settings['table']}"
-    st.write(sql)
     df = execute_query(sql,conn)
     return df.iloc[0]['chart'],df.iloc[0]['chart_options']
 
+
 def get_chart(df, plot_type, plot_options):
-    st.write(df.head())
     if plot_type ==  'bar':
         chart = alt.Chart(df).mark_bar().encode(
             x='jahr:N',
             y='anzahl:Q'
         )
     return chart
+
 
 def main():
     st.set_page_config(
@@ -129,45 +128,15 @@ def main():
     )
     show_filter()
     
-    st.markdown(
-    '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" integrity="sha384-TX8t27EcRE3e/ihU7zmQxVncDAy5uIKz4rEkgIXeMed4M0jlfIDPvg6uqKI2xXr2" crossorigin="anonymous">',
-    unsafe_allow_html=True,
-    )
-    query_params = st.experimental_get_query_params()
-    tabs = ["Tabelle", "Grafik", "Metadaten"]
-    if "tab" in query_params:
-        active_tab = query_params["tab"][0]
-    else:
-        active_tab = "Tabelle"
+    action = st.selectbox('Zeige', ['Tabelle', 'Grafik', 'Metadaten'])
 
-    if active_tab not in tabs:
-        st.experimental_set_query_params(tab="Home")
-        active_tab = "Home"
-
-    li_items = "".join(
-        f"""
-        <li class="nav-item">
-            <a class="nav-link{' active' if t==active_tab else ''}" href="/?tab={t}">{t}</a>
-        </li>
-        """
-        for t in tabs
-    )
-    tabs_html = f"""
-        <ul class="nav nav-tabs">
-        {li_items}
-        </ul>
-    """
-
-    st.markdown(tabs_html, unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    if active_tab == "Tabelle":
+    if action.lower() == 'tabelle':
         df = get_data(settings['group_columns'],  settings['sumfields'], settings['table'])  
         if len(df)>0:
             AgGrid((df))
         else:
             st.markdown('keine Daten gefunden')
-    elif  active_tab == "Grafik":
+    elif   action.lower() == 'grafik':
         df = get_data(settings['group_columns'],  settings['sumfields'], settings['table'])  
         plot_type, plot_options = get_plot_options()
         chart = get_chart(df, plot_type, plot_options)
