@@ -117,8 +117,17 @@ def get_chart(df, plot_type, plot_options):
             x='jahr:N',
             y='anzahl:Q'
         )
-    return chart
+    return chart.properties(width = 800)
 
+
+def get_metadata():
+    sql = f"select * from stat_table where id =  {settings['table']}"
+    df_table = execute_query(sql,conn)
+    sql = f"select * from stat_table_column where stat_table_id =  {settings['table']}"
+    df_columns = execute_query(sql,conn)
+    table_expression = f"**Beschreibung**: {df_table.iloc[0]['description']}, **Datenquelle**: {df_table.iloc[0]['data_source']}"
+    
+    return table_expression
 
 def main():
     st.set_page_config(
@@ -136,12 +145,14 @@ def main():
             AgGrid((df))
         else:
             st.markdown('keine Daten gefunden')
-    elif   action.lower() == 'grafik':
+    elif action.lower() == 'grafik':
         df = get_data(settings['group_columns'],  settings['sumfields'], settings['table'])  
         plot_type, plot_options = get_plot_options()
         chart = get_chart(df, plot_type, plot_options)
         st.altair_chart(chart)
-        
+    elif action.lower() == 'metadaten':
+        table_expression = get_metadata()
+        st.markdown(table_expression,unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
