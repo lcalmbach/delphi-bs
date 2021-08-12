@@ -4,6 +4,7 @@ from sqlite3 import Error
 import pandas as pd
 import altair as alt
 from st_aggrid import AgGrid
+import json
 
 __version__ = '0.0.1' 
 __author__ = 'Lukas Calmbach'
@@ -89,8 +90,10 @@ def get_sum_fields(table_id):
     sql = f"select name,label from stat_table_column where stat_table_id = {table_id} and col_type_id = 3 order by sort_key"
     df = execute_query(sql,conn)
     df['col_expression'] = "sum(" + df['name'] + ') as \'' + df['label'] + '\''
-    result = ",".join(list(df['col_expression']))
-    return result
+    #df['col_expression_no_label'] = "sum(" + df['name'] + ')'
+    result_str = ",".join(list(df['col_expression']))
+    result_lst = list(df['label'])
+    return result_str, result_lst
 
 
 def show_filter():
@@ -104,21 +107,49 @@ def show_filter():
     settings['group_columns'] = st.multiselect("Felder", list(fields.keys()),
                                         format_func=lambda x: fields[x],
                                         default=fields.keys()) 
-    settings['sumfields'] =  get_sum_fields(settings['table'])  
+    settings['sumfields'], settings['sumfields_no_label'] =  get_sum_fields(settings['table'])  
     
 
 def get_plot_options():
     sql = f"select chart, chart_options from stat_table where id = {settings['table']}"
-    df = execute_query(sql,conn)
-    return df.iloc[0]['chart'],df.iloc[0]['chart_options']
+    df = execute_query(sql, conn)
+    plot_options = json.loads(df.iloc[0]['chart_options'])
+    return df.iloc[0]['chart'], plot_options
 
 
 def get_chart(df, plot_type, plot_options):
-    if plot_type ==  'bar':
-        chart = alt.Chart(df).mark_bar().encode(
-            x='Jahr:N',
-            y='Anzahl:Q'
-        )
+    def plot_barchart():
+        if 'color' in plot_options:
+            chart = alt.Chart(df).mark_bar().encode(
+                x=plot_options['x'], 
+                y=plot_options['y'],
+                color = plot_options['color']
+            )
+        else:
+            chart = alt.Chart(df).mark_bar().encode(
+                x=plot_options['x'], 
+                y=plot_options['y']
+            )
+        return chart
+
+    def plot_linechart():
+        if 'color' in plot_options:
+            chart = alt.Chart(df).mark_line().encode(
+                x=plot_options['x'], 
+                y=plot_options['y'],
+                color = plot_options['color']
+            )
+        else:
+            chart = alt.Chart(df).mark_line().encode(
+                x=plot_options['x'], 
+                y=plot_options['y']
+            )
+        return chart
+
+    if plot_type == 'bar':
+        chart = plot_barchart()
+    elif plot_type == 'line':
+        chart = plot_linechart()
     return chart.properties(width = 400)
 
 
@@ -156,8 +187,18 @@ def main():
             st.markdown('keine Daten gefunden')
     elif action.lower() == 'grafik':
         plot_type, plot_options = get_plot_options()
-        chart = get_chart(df, plot_type, plot_options)
-        st.altair_chart(chart)
+        if plot_options['groupby']=='parameter':
+            for par in settings['sumfields_no_label']:
+                df_melted = df[['Jahr','Spital', par]].melt(id_vars=['Jahr','Spital'], value_vars=[par],
+                var_name= 'Legende', value_name=par)
+                df_melted = df_melted[df_melted['Spital'] != 'Total']
+                plot_options['y']=f"{par}:Q"
+                plot_options['color']=f"Spital:N"
+                chart = get_chart(df_melted, plot_type, plot_options)
+                st.altair_chart(chart)
+        else:
+            chart = get_chart(df, plot_type, plot_options)
+            st.altair_chart(chart)
     elif action.lower() == 'metadaten':
         table_expression = get_metadata(df)
         st.markdown(table_expression,unsafe_allow_html=True)
