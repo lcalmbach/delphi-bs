@@ -161,12 +161,14 @@ def get_chart(df, plot_type, plot_options):
             chart = alt.Chart(df).mark_bar().encode(
                 x=plot_options['x'], 
                 y=plot_options['y'],
-                color = plot_options['color']
+                color = plot_options['color'],
+                tooltip=plot_options['tooltip']
             )
         else:
             chart = alt.Chart(df).mark_bar().encode(
                 x=plot_options['x'], 
-                y=plot_options['y']
+                y=plot_options['y'],
+                tooltip=plot_options['tooltip']
             )
         return chart
 
@@ -175,34 +177,39 @@ def get_chart(df, plot_type, plot_options):
             chart = alt.Chart(df).mark_line().encode(
                 x=plot_options['x'], 
                 y=plot_options['y'],
-                color = plot_options['color']
+                color = plot_options['color'],
+                tooltip=plot_options['tooltip']
             )
         else:
             chart = alt.Chart(df).mark_line().encode(
                 x=plot_options['x'], 
-                y=plot_options['y']
-            )
+                y=plot_options['y'],
+                tooltip=plot_options['tooltip']
+            ) #.configure_legend(orient='bottom',direction="vertical")
         return chart
 
     if plot_type == 'bar':
         chart = plot_barchart()
     elif plot_type == 'line':
         chart = plot_linechart()
-    return chart.properties(width = 400)
+    return chart.properties(width = 600)
 
 
 def get_metadata(df):
     sql = f"select * from stat_table where id =  {settings['table']}"
     df_table = execute_query(sql,conn)
+    
     sql = f"select * from stat_table_column where stat_table_id =  {settings['table']}"
     df_columns = execute_query(sql,conn)
-    column_expression = '<br>**Spalten**:<br>'
+    column_expression = '<br><br>**Spalten**:<br><table>'
     for index, row in df_columns.iterrows():
-        column_expression += f"{row['label']}: {row['description']}<br>"
+        column_expression += f"<tr><td>{row['label']}</td><td>{row['description']}</td></tr>"
+    column_expression += '</table>'
+    
     table_expression = f"**Beschreibung**: {df_table.iloc[0]['description']}<br>**Datenquelle**: {df_table.iloc[0]['data_source']}"
     if len( df_columns[df_columns['name'] == 'jahr']) > 0:
-        min= df['Jahr'].min()
-        max= df['Jahr'].max()
+        min = df['Jahr'].min()
+        max = df['Jahr'].max()
         table_expression += f"<br>**Jahre von/bis**: {min} - {max}"
     table_expression += column_expression
     return table_expression
@@ -231,17 +238,19 @@ def main():
                 var_name= 'Legende', value_name=par)
                 df_melted = df_melted[df_melted['Spital'] != 'Total']
                 plot_options['y']=f"{par}:Q"
+                plot_options['tooltip']=[plot_options['x'],par]
                 plot_options['color']=f"Spital:N"
                 chart = get_chart(df_melted, plot_type, plot_options)
                 st.altair_chart(chart)
         else:
+            plot_options['tooltip']=[plot_options['x'],plot_options['y']]
             chart = get_chart(df, plot_type, plot_options)
             st.altair_chart(chart)
     elif action.lower() == 'metadaten':
         table_expression = get_metadata(df)
-        st.markdown(table_expression,unsafe_allow_html=True)
+        st.markdown(table_expression, unsafe_allow_html=True)
 
-    st.markdown(APP_INFO,unsafe_allow_html=True)
+    st.markdown(APP_INFO, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
