@@ -201,7 +201,7 @@ def get_metadata(df):
     
     sql = f"select * from stat_table_column where stat_table_id =  {settings['table']}"
     df_columns = execute_query(sql,conn)
-    column_expression = '<br><br>**Spalten**:<br><table>'
+    column_expression = '<br><br><table><tr><th>Spalte</th><th>Beeschreibung</th></tr>'
     for index, row in df_columns.iterrows():
         column_expression += f"<tr><td>{row['label']}</td><td>{row['description']}</td></tr>"
     column_expression += '</table>'
