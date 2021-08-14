@@ -67,13 +67,24 @@ def get_group_fields(column_id_list):
     df['col_expression'] = df['name'] + ' as \'' + df['label'] + '\''
     result = ",".join(list(df['col_expression']))
     result_no_label = ",".join(list(df['name']))
+    settings['dic_columns'] = dict(zip(list(df['id']), list(df['name'])))
     return result, result_no_label
 
 
 def get_data(group_field_ids, sum_fields, table_id):
+    def get_criteria():
+        if settings['has_filter']:
+            if settings['filter']['type']==7: 
+                lst_expr = f"','".join(settings['filter']['value'])
+                criteria = f"WHERE {settings['filter']['field']} in ('{lst_expr}')"
+        else:
+            criteria = ''
+        return criteria
+
     table_name = get_table_name(table_id)
     group_fields, group_fields_no_label = get_group_fields(group_field_ids)
-    sql = f"select {group_fields}, {sum_fields} from {table_name} group by {group_fields_no_label} order by {group_fields_no_label}"
+    
+    sql = f"select {group_fields}, {sum_fields} from {table_name} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
     # st.write(sql)
     df = execute_query(sql,conn)
     return df
@@ -87,7 +98,7 @@ def get_fields(table_id):
 
 
 def get_sum_fields(table_id):
-    sql = f"select name,label from stat_table_column where stat_table_id = {table_id} and col_type_id = 3 order by sort_key"
+    sql = f"select name, label from stat_table_column where stat_table_id = {table_id} and col_type_id = 3 order by sort_key"
     df = execute_query(sql,conn)
     df['col_expression'] = "sum(" + df['name'] + ') as \'' + df['label'] + '\''
     #df['col_expression_no_label'] = "sum(" + df['name'] + ')'
@@ -97,17 +108,44 @@ def get_sum_fields(table_id):
 
 
 def show_filter():
+    def get_filter_lookup():
+        sql = f"select spital from spitaeler group by spital order by spital"
+        df = execute_query(sql,conn)
+        return list(df['spital'])
+
+    def get_metadata():
+        sql = f"select * from stat_table where id = {settings['table']}"
+        df = execute_query(sql,conn)
+        settings['has_filter'] = df.iloc[0]['filter'] != None
+        if settings['has_filter']:
+            settings['filter'] = json.loads(df.iloc[0]['filter']) 
+            if settings['filter']['type'] in (6,7):
+                settings['filter']['lookup'] = get_filter_lookup()
+
     all_categories = get_categories()
     settings['category'] = st.selectbox("Kategorie", list(all_categories.keys()),
                                         format_func=lambda x: all_categories[x])    
     tables = get_tables(settings['category'])
     settings['table'] = st.selectbox("Tabelle", list(tables.keys()),
-                                        format_func=lambda x: tables[x])    
+                                        format_func=lambda x: tables[x])
+    get_metadata()    
     fields = get_fields(settings['table'])
     settings['group_columns'] = st.multiselect("Felder", list(fields.keys()),
                                         format_func=lambda x: fields[x],
                                         default=fields.keys()) 
     settings['sumfields'], settings['sumfields_no_label'] =  get_sum_fields(settings['table'])  
+    
+    if settings['has_filter']>0:
+        if settings['filter']['type'] == 4:
+            settings['filter']['value'] = st.text_input(settings['filter']['label'])
+        elif settings['filter']['type'] == 5:
+            settings['filter']['value'] = st.number_input(settings['filter']['label'])
+        elif settings['filter']['type'] == 6:
+            settings['filter']['value'] = st.select(settings['filter']['label'], options=settings['filter']['lookup'])
+        elif settings['filter']['type'] == 7:
+            settings['filter']['value'] = st.multiselect(settings['filter']['label'], options=settings['filter']['lookup'], default=settings['filter']['lookup'])
+        elif settings['filter_field_type'] == 8:
+            settings['filter']['value'] = st.select_slider(settings['filter']['label'])
     
 
 def get_plot_options():
@@ -202,6 +240,8 @@ def main():
     elif action.lower() == 'metadaten':
         table_expression = get_metadata(df)
         st.markdown(table_expression,unsafe_allow_html=True)
+
+    st.markdown(APP_INFO,unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
