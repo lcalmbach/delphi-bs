@@ -2,6 +2,7 @@
 import sqlite3
 from sqlite3 import Error
 import pandas as pd
+import numpy as np
 
 
 DB_FILE_PATH = "delphi-bs.sqlite3"
@@ -9,18 +10,20 @@ conn = sqlite3.connect(DB_FILE_PATH)
 
 def get_data(filename):
     df = pd.read_csv(filename, sep=';')
-    df = df.groupby(['datum'])['PREC [mm]'].agg(['sum']).reset_index()
-    df.rename(columns = {'sum': 'prec_mm'}, inplace=True)
+    df = df[['Jahr','Gemeinde','Geschlecht','Staatsangehoerigkeit','Anzahl']]
+    #df = df.groupby(['datum'])['PREC [mm]'].agg(['sum']).reset_index()
+    #df.rename(columns = {'sum': 'prec_mm'}, inplace=True)
     print(df.head())
-    df.to_parquet('./data/prec.pq')
+    #df.to_parquet('./data/prec.pq')
     
     return df
 
 def complete_data(df):
-    df = df.rename(columns={"staatsangehoerigkeit":"nationalitaet"})
-    df['alter_agg_10'] = 0
-    df['alter_agg_3'] = 0
-
+    #df = df.rename(columns={"staatsangehoerigkeit":"nationalitaet"})
+    #df['alter_agg_10'] = 0
+    #df['alter_agg_3'] = 0
+    df['Ausland_Schweiz'] = np.where(df['Staatsangehoerigkeit'] == 'Schweiz', 'CH', 'Ausl')
+    print(df.head())
     return df
 
 def connect_to_db(db_file):
@@ -104,7 +107,7 @@ def get_column_names_from_db_table(sql_cursor, table_name):
 
 
 if __name__ == '__main__':
-    df = get_data("./import/100051.csv")
+    df = get_data("./import/100126.csv")
     df = complete_data(df)
     insert_values_to_table('bevoelkerung', df)
 
