@@ -5,6 +5,7 @@ import pandas as pd
 import altair as alt
 from st_aggrid import AgGrid
 import json
+import requests
 
 __version__ = '0.0.1' 
 __author__ = 'Lukas Calmbach'
@@ -71,6 +72,26 @@ def get_group_fields(column_id_list):
     return result, result_no_label
 
 
+def get_rename_obj(df_columns):
+    result = {}
+    for index, row in df_columns.iterrows():
+        result[row['name']] = row['label']
+    return result
+
+def get_url_df():
+    data = requests.get(settings['url']).json()
+    data = data['records']
+    df = pd.DataFrame(data)['fields']
+    df = pd.DataFrame(x for x in df)
+    df = df[list(settings['df_columns']['name'])]
+    df = df.rename(columns=get_rename_obj(settings['df_columns']))
+    if settings['has_index']:
+        df.set_index(settings['index_field'],inplace=True)
+        df = df.T
+        df.reset_index(inplace=True)
+    return df
+
+
 def get_data(group_field_ids, sum_fields, table_id):
     def get_criteria():
         if settings['has_filter']:
@@ -80,13 +101,15 @@ def get_data(group_field_ids, sum_fields, table_id):
         else:
             criteria = ''
         return criteria
-
-    table_name = get_table_name(table_id)
-    group_fields, group_fields_no_label = get_group_fields(group_field_ids)
     
-    sql = f"select {group_fields}, {sum_fields} from {table_name} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
-    # st.write(sql)
-    df = execute_query(sql,conn)
+    if settings['is_url']:
+        df = get_url_df()
+    else:
+        table_name = get_table_name(table_id)
+        group_fields, group_fields_no_label = get_group_fields(group_field_ids)
+        
+        sql = f"select {group_fields}, {sum_fields} from {table_name} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
+        df = execute_query(sql,conn)
     return df
 
 
@@ -103,25 +126,38 @@ def get_sum_fields(table_id):
     df['col_expression'] = "sum(" + df['name'] + ') as \'' + df['label'] + '\''
     #df['col_expression_no_label'] = "sum(" + df['name'] + ')'
     result_str = ",".join(list(df['col_expression']))
-    result_lst = list(df['label'])
+    result_lst = list(df['name'])
     return result_str, result_lst
 
 
-def show_filter():
-    def get_filter_lookup():
+def get_filter_lookup():
         sql = f"select spital from spitaeler group by spital order by spital"
         df = execute_query(sql,conn)
         return list(df['spital'])
 
-    def get_metadata():
-        sql = f"select * from stat_table where id = {settings['table']}"
-        df = execute_query(sql,conn)
-        settings['has_filter'] = df.iloc[0]['filter'] != None
-        if settings['has_filter']:
-            settings['filter'] = json.loads(df.iloc[0]['filter']) 
-            if settings['filter']['type'] in (6,7):
-                settings['filter']['lookup'] = get_filter_lookup()
 
+def get_metadata():
+    sql = f"select * from stat_table where id = {settings['table']}"
+    df = execute_query(sql,conn)
+    settings['df_table'] = df
+    settings['has_filter'] = df.iloc[0]['filter'] != None
+    settings['is_url'] = df.iloc[0]['url'] != None
+    settings['url'] = df.iloc[0]['url']
+    settings['show_options'] = json.loads(df.iloc[0]['show_options']) 
+    if settings['has_filter']:
+        settings['filter'] = json.loads(df.iloc[0]['filter']) 
+        if settings['filter']['type'] in (6,7):
+            settings['filter']['lookup'] = get_filter_lookup()
+    settings['has_index'] = df.iloc[0]['index_field'] != None
+    if settings['has_index']:
+        settings['index_field'] = df.iloc[0]['index_field']
+    
+    sql = f"select * from stat_table_column where stat_table_id = {settings['table']}"
+    df = execute_query(sql,conn)
+    settings['df_columns'] = df
+
+
+def show_filter():
     all_categories = get_categories()
     settings['category'] = st.selectbox("Kategorie", list(all_categories.keys()),
                                         format_func=lambda x: all_categories[x])    
@@ -130,9 +166,11 @@ def show_filter():
                                         format_func=lambda x: tables[x])
     get_metadata()    
     fields = get_fields(settings['table'])
-    settings['group_columns'] = st.multiselect("Felder", list(fields.keys()),
+    if len(fields)>0:
+        settings['group_columns'] = st.multiselect("Felder", list(fields.keys()),
                                         format_func=lambda x: fields[x],
                                         default=fields.keys()) 
+    
     settings['sumfields'], settings['sumfields_no_label'] =  get_sum_fields(settings['table'])  
     
     if settings['has_filter']>0:
@@ -195,13 +233,13 @@ def get_chart(df, plot_type, plot_options):
     return chart.properties(width = 600)
 
 
-def get_metadata(df):
+def get_metadata_text(df):
     sql = f"select * from stat_table where id =  {settings['table']}"
     df_table = execute_query(sql,conn)
     
     sql = f"select * from stat_table_column where stat_table_id =  {settings['table']}"
     df_columns = execute_query(sql,conn)
-    column_expression = '<br><br><table><tr><th>Spalte</th><th>Beeschreibung</th></tr>'
+    column_expression = '<br><br><table><tr><th>Spalte</th><th>Beschreibung</th></tr>'
     for index, row in df_columns.iterrows():
         column_expression += f"<tr><td>{row['label']}</td><td>{row['description']}</td></tr>"
     column_expression += '</table>'
@@ -220,11 +258,14 @@ def main():
         page_icon="ℹ",
         layout="wide",
     )
-    show_filter()
-    
-    action = st.selectbox('Zeige', ['Tabelle', 'Grafik', 'Metadaten'])
+    settings['group_columns'] = {}
+    settings['sumfields'] = {}
+    settings['table'] = {}
 
+    show_filter()
+    action = st.selectbox('Zeige', settings['show_options'])
     df = get_data(settings['group_columns'],  settings['sumfields'], settings['table'])  
+    
     if action.lower() == 'tabelle':
         if len(df)>0:
             AgGrid((df))
@@ -247,7 +288,7 @@ def main():
             chart = get_chart(df, plot_type, plot_options)
             st.altair_chart(chart)
     elif action.lower() == 'metadaten':
-        table_expression = get_metadata(df)
+        table_expression = get_metadata_text(df)
         st.markdown(table_expression, unsafe_allow_html=True)
 
     st.markdown(APP_INFO, unsafe_allow_html=True)
