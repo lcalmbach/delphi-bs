@@ -111,6 +111,7 @@ def get_data(group_field_ids, sum_fields, table_id):
         group_fields, group_fields_no_label = get_group_fields(group_field_ids)
         
         sql = f"select {group_fields}, {sum_fields} from {settings['table_name']} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
+        #st.write(sql)
         df = execute_query(sql,conn)
     return df
 
