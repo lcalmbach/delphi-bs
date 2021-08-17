@@ -41,7 +41,7 @@ def execute_query(query: str, cn) -> pd.DataFrame:
 
 
 def get_tables(cat):
-    sql = f"select id, name from stat_table where category_id = {cat} order by category_id, sort_key"
+    sql = f"select id, name from stat_table where category_id in ({cat},0) order by category_id, sort_key"
     df = execute_query(sql,conn)
     result = dict(zip( list(df['id']), list(df['name']) ))
     return result
@@ -78,18 +78,32 @@ def get_rename_obj(df_columns):
         result[row['name']] = row['label']
     return result
 
+def get_ordered_columns_list(df, field):
+    #result =  ",".join(list(df[field]))
+    result = list(df.sort_values('sort_key')[field])
+    return result
+
 
 def get_url_df():
     data = requests.get(settings['url']).json()
     data = data['records']
     df = pd.DataFrame(data)['fields']
     df = pd.DataFrame(x for x in df)
-    df = df[list(settings['df_columns']['name'])]
     df = df.rename(columns=get_rename_obj(settings['df_columns']))
+    df_cols = settings['df_columns']
+    df_cols = df_cols[ df_cols['id'].isin(list(settings['group_columns'])) ]
+    lst_fields = list(df_cols['label'])
+    df = df[lst_fields]
+
     if settings['has_index']:
         df.set_index(settings['index_field'],inplace=True)
         df = df.T
         df.reset_index(inplace=True)
+    else:
+        if settings['has_filter']:
+            if settings['filter']['type'] == 5: 
+                df = df.astype({settings['filter']['field']: int})
+                df = df[df[settings['filter']['field']] == int(settings['filter']['value'])]
     return df
 
 
@@ -102,6 +116,8 @@ def get_data(group_field_ids, sum_fields, table_id):
                 criteria = f"WHERE {settings['filter']['field']} in ('{lst_expr}')"
             elif settings['filter']['type'] == 6 and settings['filter']['value'] != '<Alle>':  
                 criteria = f"WHERE {settings['filter']['field']} = '{settings['filter']['value']}'"
+            elif settings['filter']['type'] == 5: 
+                criteria = f"WHERE {settings['filter']['field']} = {settings['filter']['value']}"
             
         return criteria
     
@@ -109,7 +125,6 @@ def get_data(group_field_ids, sum_fields, table_id):
         df = get_url_df()
     else:
         group_fields, group_fields_no_label = get_group_fields(group_field_ids)
-        
         sql = f"select {group_fields}, {sum_fields} from {settings['table_name']} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
         #st.write(sql)
         df = execute_query(sql,conn)
@@ -134,8 +149,9 @@ def get_sum_fields(table_id):
 
 
 def get_filter_lookup(field, table):
-    sql = f"select {field} from {table} group by {field} order by  {field}"
-    df = execute_query(sql,conn)
+    if settings['is_url'] == False:
+        sql = f"select {field} from {table} group by {field} order by  {field}"
+        df = execute_query(sql,conn)
     result = ['<Alle>'] + list(df[field])
     return result
 
@@ -183,13 +199,16 @@ def show_filter():
         if settings['filter']['type'] == 4:
             settings['filter']['value'] = st.text_input(settings['filter']['label'])
         elif settings['filter']['type'] == 5:
-            settings['filter']['value'] = st.number_input(settings['filter']['label'])
+            settings['filter']['value'] = st.number_input(settings['filter']['label'],
+                min_value=settings['filter']['min'],
+                max_value=settings['filter']['max'],
+                value=settings['filter']['max'])
         elif settings['filter']['type'] == 6:
             settings['filter']['value'] = st.selectbox(settings['filter']['label'], options=settings['filter']['lookup'])
         elif settings['filter']['type'] == 7:
             settings['filter']['value'] = st.multiselect(settings['filter']['label'], options=settings['filter']['lookup'], default=settings['filter']['lookup'])
             settings['filter']['value'] =  [i.replace("'","''") for i in settings['filter']['value']] 
-        elif settings['filter_field_type'] == 8:
+        elif settings['filter']['type'] == 8:
             settings['filter']['value'] = st.select_slider(settings['filter']['label'])
     
 
@@ -204,15 +223,15 @@ def get_chart(df, plot_type, plot_options):
     def plot_barchart():
         if 'color' in plot_options:
             chart = alt.Chart(df).mark_bar().encode(
-                x=plot_options['x'], 
-                y=plot_options['y'],
+                x=alt.X(plot_options['x']),
+                y=alt.Y(plot_options['y']),
                 color = plot_options['color'],
                 tooltip=plot_options['tooltip']
             )
         else:
             chart = alt.Chart(df).mark_bar().encode(
-                x=plot_options['x'], 
-                y=plot_options['y'],
+                x=alt.X(plot_options['x']),
+                y=alt.Y(plot_options['y']),
                 tooltip=plot_options['tooltip']
             )
         return chart
