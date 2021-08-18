@@ -91,9 +91,13 @@ def get_url_df():
     df = pd.DataFrame(x for x in df)
     df = df.rename(columns=get_rename_obj(settings['df_columns']))
     df_cols = settings['df_columns']
-    df_cols = df_cols[ df_cols['id'].isin(list(settings['group_columns'])) ]
+    # in some cases, we do not show show a column selection field, e.g. for must current covid cases, where the table is presented
+    # as is
+    if len(settings['group_columns'])>0:
+        df_cols = df_cols[ df_cols['id'].isin(list(settings['group_columns'])) ]
     lst_fields = list(df_cols['label'])
     df = df[lst_fields]
+
 
     if settings['has_index']:
         df.set_index(settings['index_field'],inplace=True)
@@ -216,6 +220,12 @@ def get_plot_options():
     sql = f"select chart, chart_options from stat_table where id = {settings['table']}"
     df = execute_query(sql, conn)
     plot_options = json.loads(df.iloc[0]['chart_options'])
+    plot_options['x'] = alt.X(plot_options['x'])
+    plot_options['y'] = alt.X(plot_options['y'])
+    if 'sort_x' in plot_options:
+        plot_options['x'].sort=plot_options['sort_x']
+    if 'sort_y' in plot_options:
+        plot_options['y'].sort=plot_options['sort_y']
     return df.iloc[0]['chart'], plot_options
 
 
@@ -223,16 +233,16 @@ def get_chart(df, plot_type, plot_options):
     def plot_barchart():
         if 'color' in plot_options:
             chart = alt.Chart(df).mark_bar().encode(
-                x=alt.X(plot_options['x']),
-                y=alt.Y(plot_options['y']),
+                x=plot_options['x'],
+                y=plot_options['y'],
                 color = plot_options['color'],
-                tooltip=plot_options['tooltip']
+                #tooltip=plot_options['tooltip']
             )
         else:
             chart = alt.Chart(df).mark_bar().encode(
-                x=alt.X(plot_options['x']),
-                y=alt.Y(plot_options['y']),
-                tooltip=plot_options['tooltip']
+                x=plot_options['x'],
+                y=plot_options['y'],
+                #tooltip=plot_options['tooltip']
             )
         return chart
 
@@ -304,13 +314,23 @@ def main():
                 df_melted = df[['Jahr','Spital', par]].melt(id_vars=['Jahr','Spital'], value_vars=[par],
                 var_name= 'Legende', value_name=par)
                 df_melted = df_melted[df_melted['Spital'] != 'Total']
-                plot_options['y']=f"{par}:Q"
-                plot_options['tooltip']=[plot_options['x'],par]
+                plot_options['y']=alt.Y(f"{par}:Q", sort = 'x')
+                plot_options['tooltip']=alt.X([plot_options['x'],par])
                 plot_options['color']=f"Spital:N"
                 chart = get_chart(df_melted, plot_type, plot_options)
                 st.altair_chart(chart)
+        if plot_options['groupby']=='selected_fields':
+            chart_group_fields = settings['df_columns'][(settings['df_columns']['is_chart_group_by_field']==1) & (settings['df_columns']['id'].isin(settings['group_columns']))]
+            chart_group_fields = list(chart_group_fields['label'])
+            chart_index_field = list(settings['df_columns'][settings['df_columns']['is_chart_index_field']==1]['label'])[0]
+            for field in chart_group_fields:
+                df_chart = df[[chart_index_field,field]]
+                plot_options['x']=alt.X(f"{field}:Q", sort = 'y')
+                chart = get_chart(df_chart, plot_type, plot_options)
+                st.altair_chart(chart)
         else:
             plot_options['tooltip']=[plot_options['x'],plot_options['y']]
+
             chart = get_chart(df, plot_type, plot_options)
             st.altair_chart(chart)
     elif action.lower() == 'metadaten':
