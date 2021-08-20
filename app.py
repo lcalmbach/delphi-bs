@@ -129,16 +129,20 @@ def get_data(group_field_ids, sum_fields, table_id):
         df = get_url_df()
     else:
         group_fields, group_fields_no_label = get_group_fields(group_field_ids)
-        sql = f"select {group_fields}, {sum_fields} from {settings['table_name']} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
-        #st.write(sql)
+        if sum_fields > '':
+            sql = f"select {group_fields}, {sum_fields} from {settings['table_name']} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
+        else:
+            sql = f"select {group_fields} from {settings['table_name']} {get_criteria()} order by {group_fields_no_label}"
+
+        # st.write(sql)
         df = execute_query(sql,conn)
     return df
 
 
 def get_fields(table_id):
-    sql = f"select id, name from stat_table_column where stat_table_id = {table_id} and col_type_id <> 3 order by sort_key"
+    sql = f"select id, label from stat_table_column where stat_table_id = {table_id} and col_type_id <> 3 order by sort_key"
     df = execute_query(sql,conn)
-    result = dict(zip( list(df['id']), list(df['name']) ))
+    result = dict(zip( list(df['id']), list(df['label']) ))
     return result
 
 
@@ -265,6 +269,7 @@ def get_chart(df, plot_type, plot_options):
     if plot_type == 'bar':
         chart = plot_barchart()
     elif plot_type == 'line':
+
         chart = plot_linechart()
     return chart.properties(width = 600)
 
@@ -309,6 +314,17 @@ def main():
             st.markdown('keine Daten gefunden')
     elif action.lower() == 'grafik':
         plot_type, plot_options = get_plot_options()
+        _df =  settings['df_columns']
+        if len(_df[_df['is_id_vars_field']==1]):
+            sel_fields = settings['group_columns']
+            id_vars = _df[ (_df['is_id_vars_field']==1) & (_df['id'].isin(sel_fields)) ]
+            id_vars = list(id_vars['label'])
+            value_vars = _df[(_df['is_value_vars_field']==1) & (_df['id'].isin(settings['group_columns'])) ]
+            value_vars = list(value_vars['label'])
+            if len(value_vars) + len(id_vars) > 0:
+                df = df.melt(id_vars=id_vars, value_vars=value_vars,var_name='Kategorie', value_name='Wert')
+            else:
+                df = pd.DataFrame()
         if plot_options['groupby']=='parameter':
             for par in settings['sumfields_no_label']:
                 df_melted = df[['Jahr','Spital', par]].melt(id_vars=['Jahr','Spital'], value_vars=[par],
@@ -328,11 +344,11 @@ def main():
                 plot_options['x']=alt.X(f"{field}:Q", sort = 'y')
                 chart = get_chart(df_chart, plot_type, plot_options)
                 st.altair_chart(chart)
-        else:
-            plot_options['tooltip']=[plot_options['x'],plot_options['y']]
-
+        elif len(df)>0:
             chart = get_chart(df, plot_type, plot_options)
             st.altair_chart(chart)
+        else:
+            st.warning("Es wurden keine Daten gefunden")
     elif action.lower() == 'metadaten':
         table_expression = get_metadata_text(df)
         st.markdown(table_expression, unsafe_allow_html=True)
