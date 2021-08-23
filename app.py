@@ -40,12 +40,17 @@ def execute_query(query: str, cn) -> pd.DataFrame:
     return result
 
 
+def get_group_fields_list():
+    df = settings['df_all_columns']
+    df = df[df['id'].isin(settings['df_all_columns']) ]
+
+
 def get_tables_dict(cat):
     """
     Returns a dict of all available tables
     """
 
-    sql = f"select id, name from stat_table where category_id in ({cat},0) order by category_id, sort_key"
+    sql = f"select id, name from v_stat_tables where category_id in ({cat},0) order by category_id, sort_key"
     df = execute_query(sql,conn)
     result = dict(zip( list(df['id']), list(df['name']) ))
     return result
@@ -66,10 +71,8 @@ def get_group_fields(column_id_list):
     """
     Converts a list of columns-ids in a comma separated list of column names.
     """
-    csv_list = result = ','.join(map(str, column_id_list))
 
-    sql = f"select * from stat_table_column where id in ({csv_list}) order by sort_key"
-    df = execute_query(sql,conn)
+    df = settings['df_all_columns'][(settings['df_all_columns']['col_type_id'].isin(['O','N'])) & (settings['df_all_columns']['id'].isin(settings['group_columns']))]
     df['col_expression'] = df['name'] + ' as \'' + df['label'] + '\''
     result = ",".join(list(df['col_expression']))
     result_no_label = ",".join(list(df['name']))
@@ -117,7 +120,7 @@ def get_url_df():
     return df
 
 
-def get_data(group_field_ids, sum_fields, table_id):
+def get_data(group_field_ids, sum_fields):
     def get_criteria():
         criteria = ''
         if settings['has_filter']:
@@ -135,12 +138,11 @@ def get_data(group_field_ids, sum_fields, table_id):
         df = get_url_df()
     else:
         group_fields, group_fields_no_label = get_group_fields(group_field_ids)
-        if sum_fields > '':
-            sql = f"select {group_fields}, {sum_fields} from {settings['table_name']} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
+        sum_fields_str, sum_fields = get_sum_fields()
+        if len(sum_fields) > 0:
+            sql = f"select {group_fields}, {sum_fields_str} from {settings['table_name']} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
         else:
             sql = f"select {group_fields} from {settings['table_name']} {get_criteria()} order by {group_fields_no_label}"
-
-        # st.write(sql)
         df = execute_query(sql,conn)
     return df
 
@@ -153,7 +155,7 @@ def get_fields_dict():
 
 
 def get_sum_fields():
-    df = settings['df_all_columns'][settings['df_all_columns']['col_type_id'] == 3]
+    df = settings['df_all_columns'][(settings['df_all_columns']['col_type_id'] == 'Q') & (settings['df_all_columns']['id'].isin(settings['group_columns']))]
     df['col_expression'] = "sum(" + df['name'] + ') as \'' + df['label'] + '\''
     result_str = ",".join(list(df['col_expression']))
     result_lst = list(df['name'])
@@ -227,7 +229,7 @@ def get_plot_options():
     df = settings['df_table']
     plot_options = json.loads(df.iloc[0]['chart_options'])
     plot_options['x'] = alt.X(plot_options['x'])
-    plot_options['y'] = alt.X(plot_options['y'])
+    plot_options['y'] = alt.Y(plot_options['y'])
     if 'sort_x' in plot_options:
         plot_options['x'].sort=plot_options['sort_x']
     if 'sort_y' in plot_options:
@@ -241,21 +243,28 @@ def get_chart(df, plot_type, plot_options):
             x=plot_options['x'],
             y=plot_options['y']
         )
-        if 'color' in plot_options:
-            chart.color = plot_options['color']
+        #if 'color' in plot_options:
+        #    chart.color = plot_options['color']
         if 'tooltip' in plot_options:
                 chart.tooltip=plot_options['tooltip']
         return chart
 
     def plot_linechart():
-        chart = alt.Chart(df).mark_line().encode(
-            x=plot_options['x'], 
-            y=plot_options['y']
-        )
         if 'color' in plot_options:
-            chart.color = plot_options['color']
-        if 'tooltip' in plot_options:
-            chart.tooltip=plot_options['tooltip']
+            chart = alt.Chart(df).mark_line().encode(
+                x=plot_options['x'],
+                y=plot_options['y'],
+                color = alt.Color(plot_options['color']),
+                tooltip=plot_options['tooltip']
+            )
+        else:
+            chart = alt.Chart(df).mark_line().encode(
+                x=plot_options['x'],
+                y=plot_options['y'],
+                tooltip=plot_options['tooltip']
+            )
+        #if 'tooltip' in plot_options:
+        #    chart.
         return chart
 
     if plot_type == 'bar':
@@ -305,26 +314,12 @@ def show_table(df:pd.DataFrame):
 def show_chart(df:pd.DataFrame):
     plot_type, plot_options = get_plot_options()
     _df =  settings['df_all_columns']
-    if len(_df[_df['is_id_vars_field']==1]):
-        sel_fields = settings['group_columns']
-        id_vars = _df[ (_df['is_id_vars_field']==1) & (_df['id'].isin(sel_fields)) ]
-        id_vars = list(id_vars['label'])
-        value_vars = _df[(_df['is_value_vars_field']==1) & (_df['id'].isin(settings['group_columns'])) ]
-        value_vars = list(value_vars['label'])
-        if len(value_vars) + len(id_vars) > 0:
-            df = df.melt(id_vars=id_vars, value_vars=value_vars,var_name='Kategorie', value_name='Wert')
-        else:
-            df = pd.DataFrame()
-    if plot_options['groupby']=='parameter':
-        for par in settings['sumfields_no_label']:
-            df_melted = df[['Jahr','Spital', par]].melt(id_vars=['Jahr','Spital'], value_vars=[par],
-            var_name= 'Legende', value_name=par)
-            df_melted = df_melted[df_melted['Spital'] != 'Total']
-            plot_options['y']=alt.Y(f"{par}:Q", sort = 'x')
-            plot_options['tooltip']=alt.X([plot_options['x'],par])
-            plot_options['color']=f"Spital:N"
-            chart = get_chart(df_melted, plot_type, plot_options)
-            st.altair_chart(chart)
+    id_vars = _df[ (_df['is_id_vars_field']==1) & (_df['id'].isin(settings['group_columns']))]
+    id_vars = list(id_vars['label'])
+    value_vars = _df[(_df['is_value_vars_field']==1) & (_df['id'].isin(settings['group_columns'])) ]
+    value_vars = list(value_vars['label'])
+
+    # wohnviertel charts, todo make more generalized
     if plot_options['groupby']=='selected_fields':
         chart_group_fields = settings['df_all_columns'][(settings['df_all_columns']['is_chart_group_by_field']==1) & (settings['df_all_columns']['id'].isin(settings['group_columns']))]
         chart_group_fields = list(chart_group_fields['label'])
@@ -334,11 +329,111 @@ def show_chart(df:pd.DataFrame):
             plot_options['x']=alt.X(f"{field}:Q", sort = 'y')
             chart = get_chart(df_chart, plot_type, plot_options)
             st.altair_chart(chart)
-    elif len(df)>0:
+    # if there is just just one index parameter, the plot can be created without melting
+    elif (len(id_vars) == 1) & (len(value_vars) == 1):
+        plot_options['y']= f"{value_vars[0]}:Q"
+        if 'color' in plot_options:
+            plot_options.pop('color')
+        plot_options['tooltip']= list(df.columns)
+        chart = get_chart(df, plot_type, plot_options)
+        st.altair_chart(chart)
+    # used for hospital indicators, todo: use generealized method
+    elif plot_options['groupby']=='parameter':
+        for par in value_vars:
+            df_melted = df[['Jahr','Spital', par]].melt(id_vars=['Jahr','Spital'], value_vars=[par],
+                var_name= 'Legende', value_name=par)
+            df_melted = df_melted[(df_melted['Spital'] != 'Total')]
+            plot_options['y'] = alt.Y(f"{par}:Q", sort = 'x')
+            plot_options['tooltip'] = alt.Tooltip(['Jahr', 'Spital',par])
+            plot_options['color'] = f"Spital"
+            chart = get_chart(df_melted, plot_type, plot_options)
+            st.altair_chart(chart)
+    elif (len(id_vars) == 1) & (len(value_vars) > 1):
+        df_copy = df.melt(id_vars=id_vars, value_vars=value_vars,
+            var_name=plot_options['melt_var_name'], value_name=plot_options['melt_value_name'])
+        chart = get_chart(df_copy, plot_type, plot_options)
+        st.altair_chart(chart)
+    
+    #elif (len(id_vars) == 1) & (len(value_vars) > 1):
+    #    st.write(123)
+    #    for par in value_vars:
+    #        try:
+    #            id_vars.append(par)
+    #            df_copy = df[id_vars]
+    #            plot_options['color'] = f"{id_vars[1]}:N"
+    #            plot_options['y'] = f"{par}:Q"
+    #            plot_options['tooltip'] = id_vars
+    #        except:
+    #            st.warning("Mit den ausgewählten Feldern kann keine Grafik erzeugt werden")
+    #            df = pd.DataFrame()
+    #        chart = get_chart(df_copy, plot_type, plot_options)
+    #        st.altair_chart(chart)
+    # multiple value parameters, e.g. dataset uebernachtungen: 
+    elif (len(id_vars) == 2) & (len(value_vars) > 1):
+        for par in value_vars:
+            try:
+                id_vars.append(par)
+                df_copy = df[id_vars]
+                plot_options['color'] = f"{id_vars[1]}:N"
+                plot_options['y'] = f"{par}:Q"
+                plot_options['tooltip'] = id_vars
+            except:
+                st.warning("Mit den ausgewählten Feldern kann keine Grafik erzeugt werden")
+                df = pd.DataFrame()
+            chart = get_chart(df_copy, plot_type, plot_options)
+            st.altair_chart(chart)
+    
+    # if there are 2 index parameters, the second index parameter is used for the color encoding
+    elif (len(id_vars) == 2) & (len(value_vars) == 1):
+        try:
+            df = df.melt(id_vars=id_vars, value_vars=value_vars,var_name=plot_options['melt_var_name'], value_name=plot_options['melt_value_name'])
+        except:
+            st.warning("Mit den ausgewählten Feldern kann keine Grafik erzeugt werden")
+            df = pd.DataFrame()
+        plot_options['color'] = f"{id_vars[1]}:N"
         chart = get_chart(df, plot_type, plot_options)
         st.altair_chart(chart)
     else:
-        st.warning("Es wurden keine Daten gefunden")
+        sel_color_column = st.selectbox("Wähle Kategorie der Grafiklegende", options = id_vars[1:])
+        try:
+            df = df[[id_vars[0], sel_color_column, value_vars[0]]]
+            df = df.melt(id_vars=[id_vars[0],sel_color_column], value_vars=value_vars,var_name=plot_options['melt_var_name'], value_name=plot_options['melt_value_name'])
+        except:
+            st.warning("Mit den ausgewählten Feldern kann keine Grafik erzeugt werden")
+            df = pd.DataFrame()
+        plot_options['color'] = f"{sel_color_column}:N"
+        chart = get_chart(df, plot_type, plot_options)
+        st.altair_chart(chart)
+
+    #elif plot_options['groupby']=='group':
+    #    for group in list(settings['df_selected_columns']['label']):
+    #        if group != 'Jahr':
+    #            plot_options['y']=alt.Y(f"Anzahl:Q")
+    #            plot_options['color']=f"{group}:N"
+    #            plot_options['tooltip']=alt.Tooltip(['Jahr', group])
+    #            chart = get_chart(df, plot_type, plot_options)
+    #            st.altair_chart(chart)
+    #elif plot_options['groupby']=='parameter':
+    #    for par in settings['sumfields_no_label']:
+    #        df_melted = df[['Jahr','Spital', par]].melt(id_vars=['Jahr','Spital'], value_vars=[par],
+    #        var_name= 'Legende', value_name=par)
+    #        df_melted = df_melted[df_melted['Spital'] != 'Total']
+    #        plot_options['y']=alt.Y(f"{par}:Q", sort = 'x')
+    #        plot_options['tooltip']=alt.Tooltip([plot_options['x'],par])
+    #        plot_options['color']=f"Spital:N"
+    #        chart = get_chart(df_melted, plot_type, plot_options)
+    #        st.altair_chart(chart)
+    #elif plot_options['groupby']=='selected_fields':
+    #    chart_group_fields = settings['df_all_columns'][(settings['df_all_columns']['is_chart_group_by_field']==1) & (settings['df_all_columns']['id'].isin(settings['group_columns']))]
+    #    chart_group_fields = list(chart_group_fields['label'])
+    #    chart_index_field = list(settings['df_all_columns'][settings['df_all_columns']['is_chart_index_field']==1]['label'])[0]
+    #    for field in chart_group_fields:
+    #        df_chart = df[[chart_index_field,field]]
+    #        plot_options['x']=alt.X(f"{field}:Q", sort = 'y')
+    #        chart = get_chart(df_chart, plot_type, plot_options)
+    #        st.altair_chart(chart)
+    #else:
+    #    st.warning("Es wurden keine Daten gefunden")
 
 def main():
     def init():
@@ -354,11 +449,10 @@ def main():
     init()
     show_filter()
     action = st.selectbox('Zeige', settings['show_options'])
-    df = get_data(settings['group_columns'],  settings['sumfields'], settings['table'])  
+    df = get_data(settings['group_columns'],  settings['sumfields'])
     
     if action.lower() == 'tabelle':
         show_table(df)
-        
     elif action.lower() == 'grafik':
         show_chart(df)
     elif action.lower() == 'metadaten':
