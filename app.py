@@ -4,6 +4,7 @@ from sqlite3 import Error
 import pandas as pd
 import altair as alt
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, DataReturnMode, JsCode
+import extra_streamlit_components as stx
 import json
 import requests
 
@@ -487,14 +488,20 @@ def main():
 
     init()
     show_filter()
-    action = st.selectbox('Zeige', settings['show_options'])
+    action = stx.tab_bar(data=[
+        stx.TabBarItemData(id=1, title="Tabelle", description=""),
+        stx.TabBarItemData(id=2, title="Grafik", description=""),
+        stx.TabBarItemData(id=3, title="Metadaten", description=""),
+    ], default=1)
+
     df = get_data(settings['group_columns'],  settings['sumfields'])
-    
-    if action.lower() == 'tabelle':
+    action = int(action)
+    if action == 1:
         show_table(df)
-    elif action.lower() == 'grafik':
+    elif action == 2:
+        st.write(123)
         show_chart(df)
-    elif action.lower() == 'metadaten':
+    elif action == 3:
         table_expression = get_metadata_text(df)
         st.markdown(table_expression, unsafe_allow_html=True)
 
