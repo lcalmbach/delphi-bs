@@ -1,4 +1,5 @@
 streamlit>=0.80.0
 streamlit-aggrid==0.1.9
+extra-streamlit-components==0.1.3
 
 
