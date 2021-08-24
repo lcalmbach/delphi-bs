@@ -10,7 +10,7 @@ import requests
 __version__ = '0.0.1' 
 __author__ = 'Lukas Calmbach'
 __author_email__ = 'lcalmbach@gmail.com'
-VERSION_DATE = '2021-06-12'
+VERSION_DATE = '2021-8-24'
 my_name = 'delphi-bs'
 my_kuerzel = "dbs"
 GIT_REPO = 'https://github.com/lcalmbach/delphi-bs'
@@ -23,6 +23,7 @@ APP_INFO = f"""<div style="background-color:powderblue; padding: 10px;border-rad
 DB_FILE_PATH = "delphi-bs.sqlite3"
 conn = sqlite3.connect(DB_FILE_PATH)
 settings = {}
+
 
 def execute_query(query: str, cn) -> pd.DataFrame:
     """
@@ -40,14 +41,9 @@ def execute_query(query: str, cn) -> pd.DataFrame:
     return result
 
 
-def get_group_fields_list():
-    df = settings['df_all_columns']
-    df = df[df['id'].isin(settings['df_all_columns']) ]
-
-
 def get_tables_dict(cat):
     """
-    Returns a dict of all available tables
+    Returns a dictionry of all available tables for a given category
     """
 
     sql = f"select id, name from v_stat_tables where category_id in ({cat},0) order by category_id, sort_key"
@@ -58,7 +54,8 @@ def get_tables_dict(cat):
 
 def get_categories_dict():
     """
-    Returns a dict of all available categories. each table belongs to a category such as population, environment, health
+    Returns a dict of all available categories. Each table belongs to a category such as population, 
+    environment, health
     """
 
     sql = f"select id, name from category order by name"
@@ -69,7 +66,7 @@ def get_categories_dict():
 
 def get_group_fields(column_id_list):
     """
-    Converts a list of columns-ids in a comma separated list of column names.
+    Converts a list of columns-ids in a comma-separated list of column names.
     """
 
     df = settings['df_all_columns'][(settings['df_all_columns']['col_type_id'].isin(['O','N'])) & (settings['df_all_columns']['id'].isin(settings['group_columns']))]
@@ -81,19 +78,21 @@ def get_group_fields(column_id_list):
 
 
 def get_rename_obj(df_columns):
+    """
+    returns the "columns = {}" part of a pandas column rename statement object where a = column names
+    and 'x' = column label
+    e.g. df.rename(columns={'a'='x','b'='y' })
+    """
     result = {}
     for index, row in df_columns.iterrows():
         result[row['name']] = row['label']
     return result
 
 
-def get_ordered_columns_list(df, field):
-    #result =  ",".join(list(df[field]))
-    result = list(df.sort_values('sort_key')[field])
-    return result
-
-
 def get_url_df():
+    """
+    converts the json returned by an api call to data.bs
+    """
     data = requests.get(settings['url']).json()
     data = data['records']
     df = pd.DataFrame(data)['fields']
@@ -121,6 +120,10 @@ def get_url_df():
 
 
 def get_data(group_field_ids, sum_fields):
+    """
+    returns data from either a url request or from the local database. if the field url is filled in the table
+    metadata, then a request is sent, otherwise there is a tablename and data is retrieved from this database-table
+    """
     def get_criteria():
         criteria = ''
         if settings['has_filter']:
@@ -138,7 +141,7 @@ def get_data(group_field_ids, sum_fields):
         df = get_url_df()
     else:
         group_fields, group_fields_no_label = get_group_fields(group_field_ids)
-        sum_fields_str, sum_fields = get_sum_fields()
+        sum_fields_str, sum_fields = get_quant_fields()
         if len(sum_fields) > 0:
             sql = f"select {group_fields}, {sum_fields_str} from {settings['table_name']} {get_criteria()} group by {group_fields_no_label} order by {group_fields_no_label}"
         else:
@@ -147,14 +150,19 @@ def get_data(group_field_ids, sum_fields):
     return df
 
 
-def get_fields_dict():
-    # sql = f"select id, label from stat_table_column where stat_table_id = {table_id} and col_type_id <> 3 order by sort_key"
-    df = settings['df_all_columns']
-    result = dict(zip( list(df['id']), list(df['label']) ))
+def get_fields_dict()->dict:
+    """
+    returns a dictionary of all columns in the form: {id, label}
+    """
+    _df = settings['df_all_columns']
+    result = dict(zip( list(_df['id']), list(_df['label']) ))
     return result
 
 
-def get_sum_fields():
+def get_quant_fields():
+    """
+    returns the quantitative fields for the current table
+    """
     df = settings['df_all_columns'][(settings['df_all_columns']['col_type_id'] == 'Q') & (settings['df_all_columns']['id'].isin(settings['group_columns']))]
     df['col_expression'] = "sum(" + df['name'] + ') as \'' + df['label'] + '\''
     result_str = ",".join(list(df['col_expression']))
@@ -163,6 +171,10 @@ def get_sum_fields():
 
 
 def get_filter_lookup(field, table):
+    """
+    returns all fields for a database table
+    todo: should probably be retrieved from settings['all_columns']
+    """
     if settings['is_url'] == False:
         sql = f"select {field} from {table} group by {field} order by  {field}"
         df = execute_query(sql,conn)
@@ -171,6 +183,9 @@ def get_filter_lookup(field, table):
 
 
 def get_table_metadata():
+    """
+    returns the metadata for the selected table table
+    """
     sql = f"select * from stat_table where id = {settings['table']}"
     df = execute_query(sql,conn)
     settings['df_table'] = df
@@ -192,6 +207,9 @@ def get_table_metadata():
     settings['df_all_columns']['column_format'] = settings['df_all_columns'].apply(lambda row: json.loads(row['column_format']),axis=1)
 
 def show_filter():
+    """
+    displays the category and tables widgets
+    """
     all_categories = get_categories_dict()
     settings['category'] = st.selectbox("Kategorie", list(all_categories.keys()),
                                         format_func=lambda x: all_categories[x])    
@@ -206,7 +224,7 @@ def show_filter():
                                         default=fields.keys()) 
     
     settings['df_selected_columns'] = settings["df_all_columns"][settings["df_all_columns"]['id'].isin(settings['group_columns'])]
-    settings['sumfields'], settings['sumfields_no_label'] =  get_sum_fields()  
+    settings['sumfields'], settings['sumfields_no_label'] =  get_quant_fields()  
     
     if settings['has_filter']>0:
         if settings['filter']['type'] == 4:
@@ -225,10 +243,19 @@ def show_filter():
             settings['filter']['value'] = st.select_slider(settings['filter']['label'])
     
 
-def get_plot_options():
+def get_plot_options(df_data):
+    """
+    returns the plot options converted into usable altair objects
+    """
     df = settings['df_table']
     plot_options = json.loads(df.iloc[0]['chart_options'])
-    plot_options['x'] = alt.X(plot_options['x'])
+    if 'x_axis_tick_freq' in plot_options:
+        min_x = df_data[plot_options['x'][:-2]].min()
+        max_x = df_data[plot_options['x'][:-2]].max()
+        step_x = plot_options['x_axis_tick_freq']
+        plot_options['x'] = alt.X(plot_options['x'], axis=alt.Axis(values=list(range(min_x, max_x, step_x))))
+    else:
+        plot_options['x'] = alt.X(plot_options['x'])
     plot_options['y'] = alt.Y(plot_options['y'])
     if 'sort_x' in plot_options:
         plot_options['x'].sort=plot_options['sort_x']
@@ -238,6 +265,9 @@ def get_plot_options():
 
 
 def get_chart(df, plot_type, plot_options):
+    """
+    plots the data as a line or barchart
+    """
     def plot_barchart():
         chart = alt.Chart(df).mark_bar().encode(
             x=plot_options['x'],
@@ -276,6 +306,9 @@ def get_chart(df, plot_type, plot_options):
 
 
 def get_metadata_text(df):
+    """
+    builds the metadata text consisting of a intro-text and a list of column-descriptions
+    """
     df_table = settings['df_table']
     df_columns = settings['df_all_columns']
     column_expression = '<br><br><table><tr><th>Spalte</th><th>Beschreibung</th></tr>'
@@ -293,6 +326,9 @@ def get_metadata_text(df):
 
 
 def show_table(df:pd.DataFrame):
+    """
+    displays the selected columns in a table
+    """
     def get_format():
         gb = GridOptionsBuilder.from_dataframe(df)
         gb.configure_default_column(groupable=False, value=True, enableRowGroup=False, aggFunc='sum', editable=False)
@@ -312,7 +348,10 @@ def show_table(df:pd.DataFrame):
         st.markdown('keine Daten gefunden')
 
 def show_chart(df:pd.DataFrame):
-    plot_type, plot_options = get_plot_options()
+    """
+    prepares and displays the Altair chart object
+    """
+    plot_type, plot_options = get_plot_options(df)
     _df =  settings['df_all_columns']
     id_vars = _df[ (_df['is_id_vars_field']==1) & (_df['id'].isin(settings['group_columns']))]
     id_vars = list(id_vars['label'])
