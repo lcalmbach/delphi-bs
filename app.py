@@ -525,7 +525,6 @@ def main():
     if action == 1:
         show_table(df)
     elif action == 2:
-        st.write(123)
         show_chart(df)
     elif action == 3:
         table_expression = get_metadata_text(df)
