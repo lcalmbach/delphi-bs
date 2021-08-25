@@ -89,7 +89,27 @@ def get_rename_obj(df_columns):
         result[row['name']] = row['label']
     return result
 
+def aggregate_data(df, date_field, agg, func):
+    if settings['table'] == 14: # air traffic aggregated
+        df['date'] = pd.to_datetime(df['date'])
+        if agg == 'month':
+            df_cols = settings['df_all_columns']
+            df['Monat'] = df[date_field].dt.month
+            df['Jahr'] = df[date_field].dt.month
+            df = df.drop(['date'], axis=1)
+            df = df.groupby(['kategorie', 'Monat']).agg(func).reset_index()      
+            # remove date column and replace by 
+            df_cols.label[df_cols.name==date_field] = 'Monat'
+            df_cols['sort_key'] = df_cols['sort_key']+1
+            year = {'name':'jahr', 'label':'Jahr','sort_key':1,'description':'Jahr',
+                'col_type_id':'O','is_id_vars_field':1,'is_value_vars_field':0}
+            df_cols = df_cols.append(year,ignore_index=True)
+            settings['df_all_columns'] = df_cols
+            settings['group_columns'].append('Jahr')
+    return df
 
+
+#@st.cache()
 def get_url_df():
     """
     converts the json returned by an api call to data.bs
@@ -98,6 +118,7 @@ def get_url_df():
     data = data['records']
     df = pd.DataFrame(data)['fields']
     df = pd.DataFrame(x for x in df)
+    #df = aggregate_data(df,'date','month','sum')
     df = df.rename(columns=get_rename_obj(settings['df_all_columns']))
     df_cols = settings['df_all_columns']
     # in some cases, we do not show show a column selection field, e.g. for must current covid cases, where the table is presented
@@ -105,6 +126,7 @@ def get_url_df():
     if len(settings['group_columns'])>0:
         df_cols = df_cols[ df_cols['id'].isin(list(settings['group_columns'])) ]
     lst_fields = list(df_cols['label'])
+    st.write()
     df = df[lst_fields]
 
 
@@ -194,7 +216,7 @@ def get_table_metadata():
     settings['has_filter'] = df.iloc[0]['filter'] != None
     settings['is_url'] = df.iloc[0]['url'] != None
     settings['url'] = df.iloc[0]['url']
-    settings['show_options'] = json.loads(df.iloc[0]['show_options']) 
+    #settings['show_options'] = json.loads(df.iloc[0]['show_options']) 
     if settings['has_filter']:
         settings['filter'] = json.loads(df.iloc[0]['filter']) 
         if settings['filter']['type'] in (6,7):
@@ -322,6 +344,10 @@ def get_metadata_text(df):
         min = df['Jahr'].min()
         max = df['Jahr'].max()
         table_expression += f"<br>**Jahre von/bis**: {min} - {max}"
+    elif len( df_columns[df_columns['label'] == 'Datum']) > 0:
+        min = df['Datum'].min()
+        max = df['Datum'].max()
+        table_expression += f"<br>**Daten von/bis**: {min} - {max}"
     table_expression += column_expression
     return table_expression
 
