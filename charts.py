@@ -24,7 +24,6 @@ APP_INFO = f"""<div style="background-color:powderblue; padding: 10px;border-rad
 DB_FILE_PATH = "delphi-bs.sqlite3"
 conn = sqlite3.connect(DB_FILE_PATH)
 settings = {}
-APP_DIC = {tables: 'Tabelle'}
 
 def execute_query(query: str, cn) -> pd.DataFrame:
     """

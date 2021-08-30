@@ -23,13 +23,49 @@ class App:
             return list(result['label'])
 
         def filter_data(key, values):
-            self.data = self.data[ self.data[key].isin(values) ]
+            if type(values) == list:
+                self.data = self.data[ self.data[key].isin(values) ]
+            else:
+                self.data = self.data[ self.data[key] == values ]
 
-        x_cols = get_col_list('x')
-        y_cols = get_col_list('y')
-        color_cols = get_col_list('g')
-        group_cols = get_col_list('g')
-        if len(cfg['value_fields']) == 1:
+        def get_filter_item(filter):
+            if filter['type'] == 4:
+                result = st.text_input(filter['label'])
+            elif filter['type'] == 5:
+                result = st.number_input(filter['label'],
+                    min_value=filter['min'],
+                    max_value=filter['max'],
+                    value=filter['default'])
+            elif filter['type'] == 6:
+                lookup_list =  self.get_unique_values(filter['field'])
+                result = st.selectbox(filter['label'], options=lookup_list)
+            elif filter['type'] == 7:
+                lookup_list =  self.get_unique_values(filter['field'])
+                result = st.multiselect(filter['label'], options=lookup_list)
+                result =  [i.replace("'","''") for i in result] 
+            elif filter['type'] == 8:
+                result = st.select_slider(filter['label'])
+            return result
+
+        
+        if "force_options" in self.metadata['table']['chart_options']:
+            ts = self.metadata['table']['chart_options']
+            filters = self.metadata['table']['filter']
+            cfg['x'] = ts['x']
+            cfg['y'] = ts['y']
+            cfg['plot_group'] = ts['plot_group']
+            if filters != {}:
+                # if a filter has been defined:
+                for filter in filters:
+                    lst_filter_items = self.get_unique_values(filter['field'])
+                    filter['value'] = get_filter_item(filter)
+                    if len(filter['value']) > 0:
+                        filter_data(filter['field'], filter['value'])
+        elif len(cfg['value_fields']) == 1:
+            x_cols = get_col_list('x')
+            y_cols = get_col_list('y')
+            color_cols = get_col_list('g')
+            group_cols = get_col_list('g')
             col1, col2 = st.columns(2)
             cfg['x'] = col1.selectbox("X-Achse", x_cols)
             cfg['y'] = col2.selectbox("Y-Achse", y_cols)
@@ -43,10 +79,11 @@ class App:
             cfg['color_filter'] = col1.multiselect(f"Filter {cfg['color']}", lst_color_items)
             if len(cfg['color_filter']) > 0:
                 filter_data(cfg['color'], cfg['color_filter'])
-                cfg['group_filter'] = col2.multiselect(f"Filter {cfg['plot_group']}", lst_group_items)
+            cfg['group_filter'] = col2.multiselect(f"Filter {cfg['plot_group']}", lst_group_items)
             if len(cfg['group_filter']) > 0:
                 filter_data(cfg['plot_group'], cfg['group_filter'])
         else:
+            x_cols = get_col_list('x')
             cfg['x'] = x_cols[0]
             cfg['color_filter'] = ''
             cfg['plot_group'] = []
@@ -63,19 +100,16 @@ class App:
     def melt_data(self,cfg):
         def get_col_list(tp):
             col_type = tp
-            result = self.metadata['columns'].query("col_type == @col_type")
+            result = self.metadata['columns'].query("col_type.isin(@col_type)")
             return list(result['label'])
         
-        value_fields = get_col_list('Q')
-        if len(value_fields) > 0:
-            group_fields = ['Jahr',]
-            self.data = self.base_data.melt(id_vars=group_fields, value_vars=value_fields,
+        cfg['value_fields'] = get_col_list(['Q'])
+        if len(cfg['value_fields']) > 1:
+            cfg['group_fields'] = get_col_list(['N','O'])
+            self.data = self.base_data.melt(id_vars=cfg['group_fields'], value_vars=cfg['value_fields'],
                 var_name = self.metadata['table']['chart_options']['melt_var_name'], value_name=self.metadata['table']['chart_options']['melt_value_name'])
-            cfg['value_fields'] = value_fields
-            cfg['group_fields'] = value_fields
         else:
             self.data = self.base_data
-            cfg['value_fields'] = []
             cfg['group_fields'] = []
         return cfg
 
@@ -85,14 +119,12 @@ class App:
         plots the data as a line or barchart
         """
         def plot_barchart():
-            chart = alt.Chart(df).mark_bar().encode(
-                x=cfg['x'],
-                y=cfg['y']
+            chart = alt.Chart(df, title = title).mark_bar().encode(
+                x=cfg['x_ax'],
+                y=cfg['y_ax'],
+                tooltip=cfg['tooltip']
             )
-            #if 'color' in cfg:
-            #    chart.color = cfg['color']
-            if 'tooltip' in cfg:
-                    chart.tooltip=cfg['tooltip']
+            
             return chart
 
         def plot_linechart():
@@ -109,8 +141,6 @@ class App:
                     y=cfg['y_ax'],
                     tooltip=cfg['tooltip']
                 )
-            #if 'tooltip' in cfg:
-            #    chart.
             return chart
 
         title = cfg['title'] if 'title' in cfg else ''
@@ -122,22 +152,31 @@ class App:
 
 
     def prepare_chart_encoding(self,cfg):
+        co = self.metadata['table']['chart_options']
         cfg['plot_type'] = self.metadata['table']['chart']
-        x = cfg['x']
-        y = cfg['y']
-        c = cfg['color']
-        x_type = self.metadata['columns'].query("label == @x").iloc[0]['col_type']
-        if len(cfg['value_fields'])==1:
-            y_type = self.metadata['columns'].query("label == @y").iloc[0]['col_type']
-            color_type = self.metadata['columns'].query("label == @c").iloc[0]['col_type']
+        if "force_options" not in co:
+            x = cfg['x']
+            y = cfg['y']
+            c = cfg['color'] if 'color' in cfg else ''
+            x_type = self.metadata['columns'].query("label == @x").iloc[0]['col_type']
+            if len(cfg['value_fields'])==1:
+                y_type = self.metadata['columns'].query("label == @y").iloc[0]['col_type']
+                color_type = self.metadata['columns'].query("label == @c").iloc[0]['col_type']
+            else:
+                y_type = 'Q'
+                color_type = 'N'
+            cfg['x_ax'] = alt.X(f"{cfg['x']}:{x_type}")
+            cfg['y_ax'] = alt.Y(f"{cfg['y']}:{y_type}")
+            cfg['color_ax'] = alt.Color(f"{cfg['color']}:{color_type}") if 'color' in cfg else ''
         else:
-            y_type = 'Q'
-            color_type = 'N'
-        
-        cfg['x_ax'] = alt.X(f"{cfg['x']}:{x_type}")
-        cfg['y_ax'] = alt.Y(f"{cfg['y']}:{y_type}")
-        cfg['color_ax'] = alt.Color(f"{cfg['color']}:{color_type}")
 
+            cfg['x_ax'] = alt.X(f"{cfg['x']}")
+            cfg['y_ax'] = alt.Y(f"{cfg['y']}")
+            if "sort_y" in co:
+                cfg['y_ax']['sort']=co['sort_y']
+            if "sort_x" in co:
+                cfg['x_ax']['sort']=co['sort_x']
+            cfg['color_ax'] = alt.Color(f"{cfg['color']}") if 'color' in cfg else ''
         return cfg
 
     def show_charts(self,cfg):
@@ -146,7 +185,8 @@ class App:
             for kat in categories:
                 cfg['title'] = kat
                 _df = self.data[ self.data[cfg['plot_group']] == kat ]
-                _df = _df.groupby([cfg['x']] + [cfg['color']]).agg('sum').reset_index()   
+                if 'color' in cfg:
+                    _df = _df.groupby([cfg['x']] + [cfg['color']]).agg('sum').reset_index()   
                 cfg['tooltip'] = list(_df.columns)
                 cfg = self.prepare_chart_encoding(cfg)
                 chart = self.get_chart(_df, cfg)
