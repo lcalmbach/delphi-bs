@@ -5,6 +5,8 @@ class App:
     def __init__(self, df, metadata):
         self.base_data = df
         self.metadata = metadata
+        self.has_filter = self.filter = self.metadata['table']['has_filter_chart']
+        self.filter = self.metadata['table']['filter_chart']
 
 
     def get_unique_values(self, key):
@@ -47,17 +49,14 @@ class App:
                 result = st.select_slider(filter['label'])
             return result
 
-        
         if "force_options" in self.metadata['table']['chart_options']:
             ts = self.metadata['table']['chart_options']
-            filters = self.metadata['table']['filter']
             cfg['x'] = ts['x']
             cfg['y'] = ts['y']
             cfg['plot_group'] = ts['plot_group']
-            if filters != {}:
+            if self.has_filter:
                 # if a filter has been defined:
-                for filter in filters:
-                    lst_filter_items = self.get_unique_values(filter['field'])
+                for filter in self.filter:
                     filter['value'] = get_filter_item(filter)
                     if len(filter['value']) > 0:
                         filter_data(filter['field'], filter['value'])
@@ -202,6 +201,6 @@ class App:
         cfg = self.melt_data(cfg)
         cfg = self.get_columns(cfg)
         cfg = self.prepare_chart_encoding(cfg)
+        # st.write((cfg))
+        # st.write(self.data)
         self.show_charts(cfg)
-
-        

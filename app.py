@@ -61,6 +61,7 @@ def get_url_df():
     converts the json returned by an api call to data.bs
     """
     data = requests.get(metadata['table']['url']).json()
+    st.write(metadata['table']['url'])
     data = data['records']
     df = pd.DataFrame(data)['fields']
     df = pd.DataFrame(x for x in df)
@@ -140,8 +141,10 @@ def get_metadata(table_id):
     df = execute_query(sql,conn)
     metadata['table'] = df.query('id == @table_id').iloc[0]
     metadata['table']['is_url'] = metadata['table']['url'] != None
-    metadata['table']['filter'] = json.loads(metadata['table']['filter'])
-    metadata['table']['has_filter'] = metadata['table']['filter'] != {}
+    metadata['table']['filter_chart'] = json.loads(metadata['table']['filter_chart'])
+    metadata['table']['filter_table'] = json.loads(metadata['table']['filter_table'])
+    metadata['table']['has_filter_chart'] = metadata['table']['filter_chart'] != []
+    metadata['table']['has_filter_table'] = metadata['table']['filter_table'] != []
     metadata['table']['chart_options'] = json.loads(metadata['table']['chart_options'])
     
     sql = query['column_metadata'].format(table_id)

@@ -8,10 +8,20 @@ class App:
         self.data = df
         self.metadata = metadata
         self.selected_columns = []
+        self.has_filter = self.filter = self.metadata['table']['has_filter_table']
+        self.filter = self.metadata['table']['filter_table']
+
+
+    def get_unique_values(self, key):
+        result = list(self.data[key].unique())
+        result.sort()
+        return result
+
 
     def get_selected_columns(self):
         """
         displays a multiselectbox and fills it with all available columns
+        returns a dataframe with the selected columns
         """
         def get_columns_dic()->dict:
             """
@@ -25,7 +35,9 @@ class App:
         sel_columns = st.multiselect("Felder", list(columns.keys()),
                                         format_func=lambda x: columns[x],
                                         default=columns.keys()) 
-        return self.metadata['columns'].query('id in @sel_columns')
+        result = self.metadata['columns'].query('id in @sel_columns')
+        return result
+        
     
     def apply_additional_filters(self):
         def get_col_name(col_id):
@@ -39,29 +51,40 @@ class App:
                 result = ['<Alle>'] + result
             return result
 
-        if (self.metadata['table']['has_filter']):
-            filter = self.metadata['table']['filter']
-            if filter['column'] in list(self.selected_columns['id']):            
-                filter['col_name'] = get_col_name(filter['column'])
-                if filter['type'] in [6,7]:
-                    filter['lookup'] = get_lookup_fields(filter['col_name'], filter['type'] == 6)
-                if int(filter['type']) == 4:
-                    filter['value'] = st.text_input(filter['label'])
-                elif int(filter['type']) == 5:
-                    filter['value'] = st.number_input(filter['label'],
-                        min_value=filter['min'],
-                        max_value=filter['max'],
-                        value=filter['max'])
-                elif int(filter['type']) == 6:
-                    filter['value'] = st.selectbox(filter['label'], options=filter['lookup'])
-                elif int(filter['type']) == 7:
-                    filter['value'] = st.multiselect(filter['label'], options=filter['lookup'], default=filter['lookup'])
-                    filter['value'] =  [i.replace("'","''") for i in filter['value']] 
-                elif int(filter['type']) == 8:
-                    filter['value'] = st.select_slider(filter['label'])
-                if filter['value'] != '<Alle>':
-                    self.data = self.data[ self.data[filter['col_name']] == str(filter['value'])]
-            
+        def get_filter_item(filter):
+            if filter['type'] == 4:
+                result = st.text_input(filter['label'])
+            elif filter['type'] == 5:
+                result = st.number_input(filter['label'],
+                    min_value=filter['min'],
+                    max_value=filter['max'],
+                    value=filter['default'])
+            elif filter['type'] == 6:
+                lookup_list =  self.get_unique_values(filter['field'])
+                if filter["include_all"]:
+                    lookup_list = ['<Alle>'] + lookup_list
+                result = st.selectbox(filter['label'], options=lookup_list)
+            elif filter['type'] == 7:
+                lookup_list =  self.get_unique_values(filter['field'])
+                result = st.multiselect(filter['label'], options=lookup_list)
+                result =  [i.replace("'","''") for i in result] 
+            elif filter['type'] == 8:
+                result = st.select_slider(filter['label'])
+            return result
+        
+        def filter_data(key, values):
+            if type(values) == list:
+                self.data = self.data[ self.data[key].isin(values) ]
+            else:
+                if values.lower() != '<alle>':
+                    self.data = self.data[ self.data[key] == values ]
+
+
+        for filter in self.filter:
+            filter['value'] = get_filter_item(filter)
+            if len(filter['value']) > 0:
+                filter_data(filter['field'], filter['value'])
+        
 
     def show_table(self):
         """
@@ -85,11 +108,11 @@ class App:
         else:
             st.markdown('keine Daten gefunden')
 
-    def get_table(self, sel_columns):
+    def get_table(self, sel_columns)->pd.DataFrame:
         """
-        limits the columns to the selected columns
+        returns a table containing only the selected columns
         """
-        def column_ids_to_names():
+        def column_ids_to_names()->pd.DataFrame:
             ids = sel_columns
             df = self.metadata['columns'].query('id in @ids')
             return df['label']
@@ -114,6 +137,7 @@ class App:
     def show_menu(self):
         self.selected_columns = self.get_selected_columns() 
         self.data = self.get_table(list(self.selected_columns['id']))
-        self.apply_additional_filters()
+        if self.has_filter:
+            self.apply_additional_filters()
         self.aggregate()
         self.show_table()
