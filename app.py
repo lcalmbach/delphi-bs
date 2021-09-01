@@ -61,7 +61,6 @@ def get_url_df():
     converts the json returned by an api call to data.bs
     """
     data = requests.get(metadata['table']['url']).json()
-    st.write(metadata['table']['url'])
     data = data['records']
     df = pd.DataFrame(data)['fields']
     df = pd.DataFrame(x for x in df)

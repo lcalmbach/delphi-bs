@@ -10,6 +10,7 @@ class App:
 
 
     def get_unique_values(self, key):
+        st.write(key)
         result = list(self.data[key].unique())
         result.sort()
         return result
@@ -60,7 +61,7 @@ class App:
                     filter['value'] = get_filter_item(filter)
                     if len(filter['value']) > 0:
                         filter_data(filter['field'], filter['value'])
-        elif len(cfg['value_fields']) == 1:
+        elif (len(cfg['value_fields']) == 1):
             x_cols = get_col_list('x')
             y_cols = get_col_list('y')
             color_cols = get_col_list('g')
@@ -96,17 +97,45 @@ class App:
         return cfg
 
     
-    def melt_data(self,cfg):
+    def melt_data(self, cfg):
         def get_col_list(tp):
             col_type = tp
-            result = self.metadata['columns'].query("col_type.isin(@col_type)")
+            df = self.metadata['columns']
+            result = df.query("col_type.isin(@col_type)")
+            
             return list(result['label'])
         
+        def replace_value_fields():
+            """if a dataset is melted for charting purpose, the columns are changed: n quantiative fields are melted to a variable and a value field.
+            thes must be reflected in the columns metadata.            
+            """
+            col_type = ['O','N']
+            df = self.metadata['columns']
+            df = df.query("col_type.isin(@col_type)")
+            tab_id = df.iloc[0]['stat_table_id']
+            val_col = {'id':-1,'stat_table_id':tab_id,'name':self.metadata['table']['chart_options']['melt_value_name'],
+                'label':self.metadata['table']['chart_options']['melt_value_name'],
+                'sort_key':100,'description':"",'col_type':'Q','data_type':'float64','chart_field_type':'y',
+                'stat_func':'sum','column_format':{}
+            }
+            df = df.append(val_col, ignore_index=True)
+            var_col = {'id':-2,'stat_table_id':tab_id,'name':self.metadata['table']['chart_options']['melt_value_name'],
+                'label':self.metadata['table']['chart_options']['melt_var_name'],
+                'sort_key':100,'description':"",'col_type':'N','data_type':'string','chart_field_type':'g',
+                'stat_func':None,'column_format':{}
+            }
+            df = df.append(var_col, ignore_index=True)
+            return df
+
         cfg['value_fields'] = get_col_list(['Q'])
         if len(cfg['value_fields']) > 1:
             cfg['group_fields'] = get_col_list(['N','O'])
             self.data = self.base_data.melt(id_vars=cfg['group_fields'], value_vars=cfg['value_fields'],
                 var_name = self.metadata['table']['chart_options']['melt_var_name'], value_name=self.metadata['table']['chart_options']['melt_value_name'])
+            self.metadata['columns'] = replace_value_fields()
+            # regenenerate the qunatitative and group columns since this has changed.
+            cfg['value_fields'] = get_col_list(['Q'])
+            cfg['group_fields'] = get_col_list(['N','O'])
         else:
             self.data = self.base_data
             cfg['group_fields'] = []
@@ -168,21 +197,32 @@ class App:
             cfg['y_ax'] = alt.Y(f"{cfg['y']}:{y_type}")
             cfg['color_ax'] = alt.Color(f"{cfg['color']}:{color_type}") if 'color' in cfg else ''
         else:
-
             cfg['x_ax'] = alt.X(f"{cfg['x']}")
             cfg['y_ax'] = alt.Y(f"{cfg['y']}")
-            if "sort_y" in co:
-                cfg['y_ax']['sort']=co['sort_y']
-            if "sort_x" in co:
-                cfg['x_ax']['sort']=co['sort_x']
-            cfg['color_ax'] = alt.Color(f"{cfg['color']}") if 'color' in cfg else ''
+        if "sort_y" in co:
+            cfg['y_ax']['sort']=co['sort_y']
+        if "sort_x" in co:
+            cfg['x_ax']['sort']=co['sort_x']
+        if 'x_axis_tick_freq' in co:
+            min_x = self.data[cfg['x']].min()
+            max_x = self.data[cfg['x']].max()
+            step_x = co['x_axis_tick_freq']
+            axis = alt.Axis(values=list(range(min_x, max_x, step_x)))
+            cfg['x_ax']['axis'] = axis
+        if 'y_axis_tick_freq' in co:
+            min_x = self.data[cfg['y']].min()
+            max_x = self.data[cfg['y']].max()
+            step_x = co['y_axis_tick_freq']
+            axis = alt.Axis(values=list(range(min_x, max_x, step_x)))
+            cfg['y_ax']['axis'] = axis
+        cfg['color_ax'] = alt.Color(f"{cfg['color']}") if 'color' in cfg else ''
         return cfg
 
     def show_charts(self,cfg):
         if len(cfg['plot_group']) > 0:
             categories = self.get_unique_values(cfg['plot_group'])
             for kat in categories:
-                cfg['title'] = kat
+                cfg['title'] = str(kat)
                 _df = self.data[ self.data[cfg['plot_group']] == kat ]
                 if 'color' in cfg:
                     _df = _df.groupby([cfg['x']] + [cfg['color']]).agg('sum').reset_index()   
