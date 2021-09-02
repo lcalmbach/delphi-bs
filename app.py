@@ -75,6 +75,7 @@ def get_data():
     """
     if metadata['table']['is_url']:
         df = get_url_df()
+        df = complete_aggregated_df(df)
     else:
         table_name = metadata['table']['table_name']
         sql = query['select_from'].format(table_name)
@@ -145,6 +146,7 @@ def get_metadata(table_id):
     metadata['table']['has_filter_chart'] = metadata['table']['filter_chart'] != []
     metadata['table']['has_filter_table'] = metadata['table']['filter_table'] != []
     metadata['table']['chart_options'] = json.loads(metadata['table']['chart_options'])
+    metadata['table']['time_aggregation'] = json.loads(metadata['table']['time_aggregation'])
     
     sql = query['column_metadata'].format(table_id)
     df = execute_query(sql, conn)
@@ -154,18 +156,33 @@ def get_metadata(table_id):
     metadata['table']['can_melt'] = len(metadata['columns'].query("chart_field_type == 'g'")) > 0
     return metadata
 
-def complete_aggregated_df(df, id_vars):
+def complete_aggregated_df(df):
     """
     calculates a data column based on month and year (using mid month date)
     """
+
+    def get_col_list(types):
+        col_types = types
+        df = metadata['columns']
+        result = df.query("col_type.isin(@col_types)")
+
     ta = metadata['table']['time_aggregation']
     if ta != {}:
-        if ta['level']=='month':
-            df['Tag'] = 15
-            df['Datum'] = pd.to_datetime([f'{y}-{m}-{d}' for y, m, d in zip(df['Jahr'], df['Monat'], df['Tag'])])
-            metadata['table']['y'] = 'Datum:T'
-            id_vars.insert(0,'Datum')
-    return df, id_vars
+        df[ta['date_field']] = pd.to_datetime(df[ta['date_field']])
+        for agg_field in ta['agg_fields']:
+            if agg_field['interval'] == 'month':
+                df['Tag'] = 15
+                df[agg_field['name']] = df[ta['date_field']].dt.month
+            if agg_field['interval']  == 'year':
+                df[agg_field['name']]  = df[ta['date_field']].dt.year
+            if agg_field['interval']  == 'date_month':
+                df['day'] = 15
+                df[agg_field['name']] = pd.to_datetime([f'{y}-{m}-{d}' for y, m, d in zip(df['Jahr'], df['Monat'], df['day'])])
+        df = df.drop(['date', 'day'], axis=1)
+
+        id_vars = ['Jahr','Monat','Datum_Monat','kategorie']
+        df = df.groupby(by=ta['id_vars']).agg(func=ta['func']).reset_index()
+    return df
 
 
 def main():

@@ -10,7 +10,6 @@ class App:
 
 
     def get_unique_values(self, key):
-        st.write(key)
         result = list(self.data[key].unique())
         result.sort()
         return result
@@ -50,11 +49,16 @@ class App:
                 result = st.select_slider(filter['label'])
             return result
 
-        if "force_options" in self.metadata['table']['chart_options']:
+        #if self.metadata['table']['chart_options']:
+        if self.metadata['table']['chart_options']['force_options']:
             ts = self.metadata['table']['chart_options']
             cfg['x'] = ts['x']
             cfg['y'] = ts['y']
-            cfg['plot_group'] = ts['plot_group']
+            if 'color' in ts:
+                cfg['color'] = ts['color']
+            cfg['plot_group'] = []
+            if 'plot_group' in ts:
+                cfg['plot_group'] = ts['plot_group']
             if self.has_filter:
                 # if a filter has been defined:
                 for filter in self.filter:
@@ -62,7 +66,8 @@ class App:
                     if len(filter['value']) > 0:
                         filter_data(filter['field'], filter['value'])
         elif (len(cfg['value_fields']) == 1):
-            x_cols = get_col_list('x')
+            cfg['plot_group']=[]
+            x_cols = get_col_list('x')        
             y_cols = get_col_list('y')
             color_cols = get_col_list('g')
             group_cols = get_col_list('g')
@@ -72,15 +77,17 @@ class App:
 
             cfg['color'] = col1.selectbox("Legende", color_cols)
             group_cols.remove(cfg['color'])
-            cfg['plot_group'] = col2.selectbox("Gruppiere Grafiken nach:", group_cols)
+            if len(group_cols) > 0:
+                cfg['plot_group'] = col2.selectbox("Gruppiere Grafiken nach:", group_cols)
             
             lst_color_items = self.get_unique_values(cfg['color'])
-            lst_group_items = self.get_unique_values(cfg['plot_group'])
+            if len(group_cols) > 0:
+                lst_group_items = self.get_unique_values(cfg['plot_group'])
             cfg['color_filter'] = col1.multiselect(f"Filter {cfg['color']}", lst_color_items)
             if len(cfg['color_filter']) > 0:
                 filter_data(cfg['color'], cfg['color_filter'])
-            cfg['group_filter'] = col2.multiselect(f"Filter {cfg['plot_group']}", lst_group_items)
-            if len(cfg['group_filter']) > 0:
+            if len(group_cols) > 0:
+                cfg['group_filter'] = col2.multiselect(f"Filter {cfg['plot_group']}", lst_group_items)
                 filter_data(cfg['plot_group'], cfg['group_filter'])
         else:
             x_cols = get_col_list('x')
@@ -109,7 +116,7 @@ class App:
             """if a dataset is melted for charting purpose, the columns are changed: n quantiative fields are melted to a variable and a value field.
             thes must be reflected in the columns metadata.            
             """
-            col_type = ['O','N']
+            col_type = ['O','N','T']
             df = self.metadata['columns']
             df = df.query("col_type.isin(@col_type)")
             tab_id = df.iloc[0]['stat_table_id']
@@ -129,9 +136,10 @@ class App:
 
         cfg['value_fields'] = get_col_list(['Q'])
         if len(cfg['value_fields']) > 1:
-            cfg['group_fields'] = get_col_list(['N','O'])
+            cfg['group_fields'] = get_col_list(['N','O','T'])
             self.data = self.base_data.melt(id_vars=cfg['group_fields'], value_vars=cfg['value_fields'],
-                var_name = self.metadata['table']['chart_options']['melt_var_name'], value_name=self.metadata['table']['chart_options']['melt_value_name'])
+                var_name = self.metadata['table']['chart_options']['melt_var_name'], 
+                value_name=self.metadata['table']['chart_options']['melt_value_name'])
             self.metadata['columns'] = replace_value_fields()
             # regenenerate the qunatitative and group columns since this has changed.
             cfg['value_fields'] = get_col_list(['Q'])
@@ -182,7 +190,7 @@ class App:
     def prepare_chart_encoding(self,cfg):
         co = self.metadata['table']['chart_options']
         cfg['plot_type'] = self.metadata['table']['chart']
-        if "force_options" not in co:
+        if  not co["force_options"]:
             x = cfg['x']
             y = cfg['y']
             c = cfg['color'] if 'color' in cfg else ''
@@ -199,6 +207,8 @@ class App:
         else:
             cfg['x_ax'] = alt.X(f"{cfg['x']}")
             cfg['y_ax'] = alt.Y(f"{cfg['y']}")
+            if 'color' in cfg:
+                cfg['color_ax'] = alt.Color(f"{cfg['color']}")
         if "sort_y" in co:
             cfg['y_ax']['sort']=co['sort_y']
         if "sort_x" in co:
@@ -218,13 +228,14 @@ class App:
         cfg['color_ax'] = alt.Color(f"{cfg['color']}") if 'color' in cfg else ''
         return cfg
 
-    def show_charts(self,cfg):
+    def show_charts(self, cfg):
         if len(cfg['plot_group']) > 0:
             categories = self.get_unique_values(cfg['plot_group'])
             for kat in categories:
                 cfg['title'] = str(kat)
                 _df = self.data[ self.data[cfg['plot_group']] == kat ]
-                if 'color' in cfg:
+
+                if ('color' in cfg ) & (self.metadata['table']['chart_options']['force_options'] == False):
                     _df = _df.groupby([cfg['x']] + [cfg['color']]).agg('sum').reset_index()   
                 cfg['tooltip'] = list(_df.columns)
                 cfg = self.prepare_chart_encoding(cfg)
@@ -241,6 +252,5 @@ class App:
         cfg = self.melt_data(cfg)
         cfg = self.get_columns(cfg)
         cfg = self.prepare_chart_encoding(cfg)
-        # st.write((cfg))
         # st.write(self.data)
         self.show_charts(cfg)

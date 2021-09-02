@@ -97,7 +97,7 @@ def aggregate_data(df, date_field, agg, func):
             df['Monat'] = df[date_field].dt.month
             df['Jahr']  = df[date_field].dt.year
             df = df.drop(['date'], axis=1)
-            df = df.groupby(['kategorie', 'Monat', 'Jahr']).agg(func).reset_index()      
+            df = df.groupby(['kategorie', 'Monat', 'Jahr']).agg(func).reset_index()
             # remove date column and replace by 
             df_cols.label[df_cols.name==date_field] = 'Monat'
             df_cols['sort_key'] = df_cols['sort_key'] + 1
@@ -292,6 +292,7 @@ def complete_aggregated_df(df, id_vars):
     calculates a data column based on month and year (using mid month date)
     """
     ta = settings['time_aggregation']
+    st.write(ta)
     if ta != {}:
         if ta['level']=='month':
             df['Tag'] = 15
