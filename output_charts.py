@@ -54,9 +54,8 @@ class App:
             ts = self.metadata['table']['chart_options']
             cfg['x'] = ts['x']
             cfg['y'] = ts['y']
-            if 'color' in ts:
-                cfg['color'] = ts['color']
-            cfg['plot_group'] = []
+            cfg['color'] = ts['color'] if 'color' in ts else ''
+            cfg['plot_group'] = ''
             if 'plot_group' in ts:
                 cfg['plot_group'] = ts['plot_group']
             if self.has_filter:
@@ -74,21 +73,27 @@ class App:
             col1, col2 = st.columns(2)
             cfg['x'] = col1.selectbox("X-Achse", x_cols)
             cfg['y'] = col2.selectbox("Y-Achse", y_cols)
+            cfg['color'] = col1.selectbox("Legende", color_cols) if len(color_cols) > 0 else ''
 
-            cfg['color'] = col1.selectbox("Legende", color_cols)
-            group_cols.remove(cfg['color'])
+            if cfg['color'] in  group_cols:
+                group_cols.remove(cfg['color'])
             if len(group_cols) > 0:
                 cfg['plot_group'] = col2.selectbox("Gruppiere Grafiken nach:", group_cols)
             
-            lst_color_items = self.get_unique_values(cfg['color'])
+            lst_color_items = self.get_unique_values(cfg['color']) if len(cfg['color']) > 0 else []
+                
             if len(group_cols) > 0:
                 lst_group_items = self.get_unique_values(cfg['plot_group'])
-            cfg['color_filter'] = col1.multiselect(f"Filter {cfg['color']}", lst_color_items)
-            if len(cfg['color_filter']) > 0:
-                filter_data(cfg['color'], cfg['color_filter'])
+
+            if len(lst_color_items) > 0: 
+                cfg['color_filter'] = col1.multiselect(f"Filter {cfg['color']}", lst_color_items)
+                if len(cfg['color_filter']) > 0:
+                    filter_data(cfg['color'], cfg['color_filter'])
+            
             if len(group_cols) > 0:
                 cfg['group_filter'] = col2.multiselect(f"Filter {cfg['plot_group']}", lst_group_items)
-                filter_data(cfg['plot_group'], cfg['group_filter'])
+                if len(cfg['group_filter']) > 0:
+                    filter_data(cfg['plot_group'], cfg['group_filter'])
         else:
             x_cols = get_col_list('x')
             cfg['x'] = x_cols[0]
@@ -100,7 +105,6 @@ class App:
             cfg['color_filter'] = st.multiselect(f"Filter {cfg['color']}", lst_color_items)
             if len(cfg['color_filter']) > 0:
                 filter_data(cfg['color'], cfg['color_filter'])
-
         return cfg
 
     
@@ -197,17 +201,18 @@ class App:
             x_type = self.metadata['columns'].query("label == @x").iloc[0]['col_type']
             if len(cfg['value_fields'])==1:
                 y_type = self.metadata['columns'].query("label == @y").iloc[0]['col_type']
-                color_type = self.metadata['columns'].query("label == @c").iloc[0]['col_type']
+                if c > '':
+                    color_type = self.metadata['columns'].query("label == @c").iloc[0]['col_type']
             else:
                 y_type = 'Q'
                 color_type = 'N'
             cfg['x_ax'] = alt.X(f"{cfg['x']}:{x_type}")
             cfg['y_ax'] = alt.Y(f"{cfg['y']}:{y_type}")
-            cfg['color_ax'] = alt.Color(f"{cfg['color']}:{color_type}") if 'color' in cfg else ''
+            cfg['color_ax'] = alt.Color(f"{cfg['color']}:{color_type}") if cfg['color'] > '' else ''
         else:
             cfg['x_ax'] = alt.X(f"{cfg['x']}")
             cfg['y_ax'] = alt.Y(f"{cfg['y']}")
-            if 'color' in cfg:
+            if cfg['color'] > '':
                 cfg['color_ax'] = alt.Color(f"{cfg['color']}")
         if "sort_y" in co:
             cfg['y_ax']['sort']=co['sort_y']
@@ -252,5 +257,4 @@ class App:
         cfg = self.melt_data(cfg)
         cfg = self.get_columns(cfg)
         cfg = self.prepare_chart_encoding(cfg)
-        # st.write(self.data)
         self.show_charts(cfg)

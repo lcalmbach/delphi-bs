@@ -10,10 +10,10 @@ import output_charts as oc
 import output_metadata as om
 from queries import query
 
-__version__ = '0.0.1'
+__version__ = '0.0.4'
 __author__ = 'Lukas Calmbach'
 __author_email__ = 'lcalmbach@gmail.com'
-VERSION_DATE = '2021-8-24'
+VERSION_DATE = '2021-9-04'
 my_name = 'delphi-bs'
 my_kuerzel = "dbs"
 GIT_REPO = 'https://github.com/lcalmbach/delphi-bs'
@@ -219,8 +219,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
