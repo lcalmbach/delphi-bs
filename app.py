@@ -194,6 +194,9 @@ def main():
             page_icon="ℹ",
             layout="wide",
         )
+        st.image('bs-flag.png')
+        st.markdown("**delphi-bs** - Fakten über Basel")
+
 
     init()
     table_id = get_table()
@@ -203,6 +206,7 @@ def main():
     menu_options = [stx.TabBarItemData(id=1, title="Tabelle", description="")]
     if "Grafik" in metadata['table']["tab_options"]:
        menu_options.append(stx.TabBarItemData(id=2, title="Grafik", description=""))
+    
     menu_options.append(stx.TabBarItemData(id=3, title="Metadaten", description=""))
     action = stx.tab_bar(menu_options, default=1)
 
