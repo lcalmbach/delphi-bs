@@ -2,7 +2,8 @@ import pandas as pd
 import sqlalchemy as sql
 import sqlite3
 
-conn = ''
+conn = ""
+
 
 def connect_to_db(db_file):
     """
@@ -11,19 +12,19 @@ def connect_to_db(db_file):
     :return: sqlite3 connection
     """
     sqlite3_conn = None
-    
-    
+
     try:
         sqlite3_conn = sqlite3.connect(db_file)
         return sqlite3_conn
     except:
-        print('error')
+        print("error")
         if sqlite3_conn is not None:
             sqlite3_conn.close()
 
-def execute_non_query(cmd: str, cn)-> bool:
+
+def execute_non_query(cmd: str, cn) -> bool:
     """
-    Executes a stored procedure, without a return value. it can only be applied to 
+    Executes a stored procedure, without a return value. it can only be applied to
     the local database
     """
 
@@ -36,14 +37,14 @@ def execute_non_query(cmd: str, cn)-> bool:
     except Exception as ex:
         pass
     return ok
-    
-    
+
+
 def execute_query(query: str, cn) -> pd.DataFrame:
     """
     Executes a query and returns a dataframe with the results
     """
 
-    ok= False
+    ok = False
     result = None
     try:
         result = pd.read_sql_query(query, cn)
@@ -56,13 +57,14 @@ def execute_query(query: str, cn) -> pd.DataFrame:
 
 def get_single_value(qry, conn, col) -> str:
     df = execute_query(qry, conn)
-    return(df[col][0])
+    return df[col][0]
+
 
 def get_distinct_values(column_name, table_name, dataset_id, criteria):
     """
     Returns a list of unique values from a defined code column.
     """
-    criteria = (' AND ' if criteria > '' else '') + criteria
+    criteria = (" AND " if criteria > "" else "") + criteria
     query = f"SELECT {column_name} FROM {table_name} where dataset_id = {dataset_id} {and_expression} group by {column_name} order by {column_name}"
     result = execute_query(query, conn)
     result = result[column_name].tolist()
